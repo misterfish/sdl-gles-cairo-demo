@@ -17,3 +17,9 @@ Setup
 
 *.swo
 *.swp
+
+node_modules
+
+assets/image-scripts/jpg
+assets/image-scripts/png
+assets/image-scripts/png-final
