@@ -1,0 +1,38 @@
+#!/bin/bash
+
+set -e
+
+USAGE="Usage: $0"
+
+bindir=$(realpath "$(dirname "$0")")
+
+. "$bindir"/functions.bash
+. "$bindir"/vars
+rootdir="$bindir"/..
+
+also () {
+    f="$1"; shift
+    "$@" && "$f"
+}
+
+# --- don't build exe using stack: will require an opt-in flag, or else
+# builds which depend on only our lib will fail.
+
+mkchd "$rootdir"/build
+
+mci
+mcb ghc
+
+# --- big difference on lazy.
+# mcb     -O1
+
+mcb -O0 # want wolf
+mcb     -XPatternSynonyms "$rootdir"/app/Main.hs
+mcb     "$rootdir"/src/clib.c
+mcb     -i"$rootdir"/src
+mcb     -odir .
+mcb     -o ./Main
+mcg
+
+cmd ln -sf "$rootdir"/assets
+cmd ./Main "$@"

@@ -1,0 +1,100 @@
+#version 100
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+uniform sampler2D texture;
+// --- 'boolean', but we use a float so we can multiply and avoid an if.
+uniform float do_vary_opacity;
+
+varying vec2 v_texcoord;
+varying vec4 v_position;
+varying vec4 v_normal;
+
+vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);
+
+float fogDensity = 2.5;
+float fogFactor = 0.5;
+float fogZFactor = 3.0;
+vec4 fogColor = vec4 (0.3, 0.3, 0.9, 1.0);
+
+// float finalOpacity = 0.9;
+
+struct light {
+    float ambientStrength;
+    float specularStrength;
+    float specularExp;
+    vec4 lightColor;
+    vec4 lightPos;
+};
+
+light l0 = light (
+    0.2,
+    3.0,
+    32.0,
+    vec4 (1.0, 0.2, 0.2, 1.0),
+    vec4 (-10.0, -2.0, 3.0, 1.0)
+);
+
+light l1 = light (
+    0.2,
+    1.0,
+    32.0,
+    vec4 (0.1, 0.7, 0.4, 0.2),
+    vec4 (20.0, -3.0, -4.0, 1.0)
+);
+
+vec4 get_lighting (vec4 viewDir, vec4 norm, int i)
+{
+    light l = i == 0 ? l0 : l1;
+    vec4 lightDir = normalize (l.lightPos - v_position);
+    float lightProj = dot (norm, lightDir);
+
+    // xxx
+    lightProj = abs (lightProj);
+
+    vec4 ambient = l.ambientStrength * l.lightColor;
+
+    vec4 diffuse = max (lightProj, 0.0) * l.lightColor;
+    diffuse.w = l.lightColor.w;
+
+    vec4 reflectDir = reflect (-lightDir, norm);
+    float reflectProj = dot (viewDir, reflectDir);
+    float spec = pow (max (reflectProj, 0.0), l.specularExp);
+    vec4 specular = l.specularStrength * l.lightColor * spec;
+
+    return ambient + specular + diffuse;
+}
+
+void main()
+{
+    vec4 init = texture2D(texture, v_texcoord);
+
+    vec4 norm = normalize (v_normal);
+    norm.w = 0.0;
+
+    vec4 viewDir = normalize (viewPos - v_position);
+
+    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);
+    lightTotal += get_lighting (viewDir, norm, 0);
+    lightTotal += get_lighting (viewDir, norm, 1);
+
+    gl_FragColor = init * lightTotal;
+
+    float fragZ = gl_FragCoord.z / gl_FragCoord.w;
+
+    float fogCoord = pow ((fragZ / fogZFactor), 8.0) * fogFactor;
+
+    float fog = fogCoord * fogDensity;
+    gl_FragColor = mix (fogColor, gl_FragColor, clamp (1.0 - fog, 0.0, 1.0));
+
+    // --- positive z = into the screen.
+    // --- z greater than thres: opacity = 1.0
+    // --- z is between 0 and thres: opacity drops off sharply
+    // --- z is less than 0: don't care
+    // --- gnuplot> plot [x=0:1] [0:1] log(x/50) + 5
+    // --- the x - (x - n) stuff is so we can switch on do_vary_opacity without an if.
+
+    float x = 0.8;
+    gl_FragColor.w = x - do_vary_opacity * (x - (log (fragZ / 50.0) + 5.0));
+}

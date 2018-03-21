@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+bindir=$(realpath "$(dirname "$0")")
+
+. "$bindir"/functions.bash
+. "$bindir"/vars
+
+USAGE="Usage: $0"
+
+chd "$rootdir"
+# cmd stack build --file-watch --exec 'bin/beep-ok bin/dist' "$@"
+cmd stack build --file-watch --exec 'bin/beep-ok' "$@"
