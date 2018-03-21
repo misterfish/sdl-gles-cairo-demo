@@ -5,7 +5,7 @@ import qualified Data.ByteString.Base64     as B64  ( encode )
 import           Text.Printf ( printf )
 import           Data.ByteString            as BS   ( ByteString
                                                     , readFile )
-import           SDLTricksCube.Launch ( launch, launch_ )
+import           GraphicsDemo.Launch ( launch, launch_ )
 
 type Log = String -> IO ()
 
