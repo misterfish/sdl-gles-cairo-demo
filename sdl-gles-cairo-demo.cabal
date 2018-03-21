@@ -21,20 +21,20 @@ source-repository head
 
 library
   exposed-modules:
-      SDLTricksCube.Config
-      SDLTricksCube.Coords
-      SDLTricksCube.CubeFaces
-      SDLTricksCube.Draw
-      SDLTricksCube.Events
-      SDLTricksCube.Extras
-      SDLTricksCube.ImageMock
-      SDLTricksCube.Launch
-      SDLTricksCube.Pixels
-      SDLTricksCube.Shader
-      SDLTricksCube.Types
-      SDLTricksCube.Util
-      SDLTricksCube.Util2
-      SDLTricksCube.Wolf
+      Graphics.SGCDemo.Config
+      Graphics.SGCDemo.Coords
+      Graphics.SGCDemo.CubeFaces
+      Graphics.SGCDemo.Draw
+      Graphics.SGCDemo.Events
+      Graphics.SGCDemo.Extras
+      Graphics.SGCDemo.ImageMock
+      Graphics.SGCDemo.Launch
+      Graphics.SGCDemo.Pixels
+      Graphics.SGCDemo.Shader
+      Graphics.SGCDemo.Types
+      Graphics.SGCDemo.Util
+      Graphics.SGCDemo.Util2
+      Graphics.SGCDemo.Wolf
   c-sources:
       src/clib.c
   other-modules:
@@ -43,7 +43,8 @@ library
       src
   ghc-options: -XPatternSynonyms
   build-depends:
-      JuicyPixels >=3.2.8.3
+      sdltricks-cat >=0.1.0.4
+    , JuicyPixels >=3.2.8.3
     , OpenGL >=3.0.2.0 && <3.0.3
     , OpenGLRaw >=3.2.7.0 && <3.2.8
     , StateVar >=1.1.0.4 && <1.1.1
@@ -55,7 +56,6 @@ library
     , filepath >=1.4.1.1
     , linear >=1.20.7 && <1.21
     , sdl2 >=2.3.0 && <2.4
-    , sdltricks-cat >=0.1.0.4
     , svg-tree >=0.6.2.1 && <0.6.3
     , time
     , vector >=0.11.0.0
