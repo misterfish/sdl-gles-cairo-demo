@@ -17,8 +17,8 @@ import           Graphics.Rendering.OpenGL as GL
 import           Graphics.SGCDemo.Coords ( verl3, verl4 )
 
 import           Graphics.SGCDemo.Util ( inv
-                                    , fst3
-                                    , snd3 )
+                                       , fst3
+                                       , snd3 )
 
 wolf :: ([Vertex3 Float], [Vertex4 Float])
 wolf = (concatMap vert' wolfData, concatMap tex' wolfData) where

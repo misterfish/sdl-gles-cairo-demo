@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 -- | notes:
 --
@@ -151,6 +152,7 @@ import qualified Data.Vector.Storable as DVS ( (!)
                                              , fromList )
 import           Data.Vector.Storable as DVS ( unsafeWith
                                              , unsafeToForeignPtr0 )
+import qualified Text.RawString.QQ as QQ ( r )
 
 import qualified Data.ByteString.Base64 as B64 ( decode )
 
@@ -213,6 +215,7 @@ import           Graphics.Rendering.OpenGL as GL
                  , GLint
                  , Matrix
                  , MatrixOrder ( RowMajor, ColumnMajor )
+                 , TextureObject
                  , MatrixComponent
                  , Program
                  , GLubyte
@@ -404,10 +407,17 @@ import qualified Graphics.Rendering.Cairo.Matrix as CM
                  , translate
                  )
 
+-- sdl-cairo-demo-cat
 import           Graphics.DemoCat.Render.Render     as SCC ( renderFrames )
-import           Graphics.SGCDemo.ImageMock ( imageBase64_1MOCK
-                                            , imageBase64_2MOCK
-                                            , imageBase64_WolfMOCK
+
+-- mesh-obj-gles
+import           Codec.MeshObjGles.Parse as Cmog ( Config (Config)
+                                                 , parse )
+
+import           Graphics.SGCDemo.ImageData ( imageNefeli
+                                            , imageNeske
+                                            , imageViking
+                                            , imageWolf
                                             , movieMock )
 
 import           Graphics.SGCDemo.Draw ( pushVertices
@@ -461,7 +471,7 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , getShadersFilesystem
                                          , attrib )
 
-import           Graphics.SGCDemo.Wolf ( wolf )
+-- import           Graphics.SGCDemo.Wolf ( wolf )
 
 import           Graphics.SGCDemo.Util ( checkSDLError
                                        , hsvCycle
@@ -550,6 +560,8 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , ProjectionType (ProjectionFrustum, ProjectionOrtho)
                                         , VertexData (VertexDataC, VertexDataT)
                                         , appLog
+                                        , texWidth
+                                        , texHeight
                                         , isFlipping
                                         , appMatrix
                                         , appUser1
@@ -583,8 +595,8 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , tex565RawPixelData
                                         , tex8888GLPixelData
                                         , tex8888RawPixelData
-                                        , tex8888_LuminanceRawPixelData
-                                        , tex8888_LuminanceGLPixelData
+--                                         , tex8888_LuminanceRawPixelData
+--                                         , tex8888_LuminanceGLPixelData
                                         , tex8888_565GLPixelData565
                                         , tex8888_565RawPixelData565
                                         , tex8888_565GLPixelData8888
@@ -628,7 +640,7 @@ doCube         = True
 doCylinder     = False
 doConeSection  = True
 doTorus        = False
-doWolf         = True
+doWolf         = False
 doBackground   = False
 
 doLinesTest    = False
@@ -658,23 +670,25 @@ faceSpec args rands = do
 
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
-    let g1 = GraphicsSingle (decodeImage' imageBase64_1MOCK) True
-        g2 = GraphicsSingle (decodeImage' imageBase64_2MOCK) True
+    let g1 = GraphicsSingle (decodeImage' imageNefeli) True
+        g2 = GraphicsSingle (decodeImage' imageNeske) True
         g3 = GraphicsMoving (concat . repeat . map decodeImage' $ movieMock) 1 0
         g4 = GraphicsSingleCairo Nothing catFrames
-        g5 = GraphicsSingleCairo (Just $ decodeImage' imageBase64_2MOCK) (bubbleFrames rands 0)
+        g5 = GraphicsSingleCairo (Just $ decodeImage' imageNeske) (bubbleFrames rands 0)
         g6 = GraphicsSingleCairo Nothing (bubbleFrames rands 0)
-        gwolf = GraphicsSingle (decodeImage' imageBase64_WolfMOCK) True
+        gwolf = GraphicsSingle (decodeImage' imageWolf) True
+        gviking = GraphicsSingle (decodeImage' imageViking) True
 
         -- tn = NoTexture
 
-    t1 <- noCairo textureWidth textureHeight
-    t2 <- noCairo textureWidth textureHeight
-    t3 <- noCairo textureWidth textureHeight
-    t4 <- withCairo textureWidth textureHeight
-    t5 <- withCairo textureWidth textureHeight
-    t6 <- withCairo textureWidth textureHeight
-    twolf <- noCairo textureWidth textureHeight
+    t1 <- noCairo 512 512
+    t2 <- noCairo 512 512
+    t3 <- noCairo 512 512
+    t4 <- withCairo 512 512
+    t5 <- withCairo 512 512
+    t6 <- withCairo 512 512
+    twolf <- noCairo 512 512
+    tviking <- noCairo 256 256
 
     -- outer / inner
     let faceSpecExtreme = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
@@ -724,6 +738,9 @@ faceSpec args rands = do
     let faceSpecWolf    = [ (twolf, gwolf), (t1, g1), (t1, g1), (t1, g1)
                           , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
+    let faceSpecViking    = [ (tviking, gviking), (t1, g1), (t1, g1), (t1, g1)
+                            , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
+
     let arg  | args == [] = ""
              | otherwise = head args
 
@@ -741,13 +758,11 @@ faceSpec args rands = do
              | arg == "nomovie"       =  faceSpecNoMovie
              | arg == "eightmovies"   =  faceSpecEightMovies
              | arg == "wolf"          =  faceSpecWolf
+             | arg == "viking"        =  faceSpecViking
              | otherwise              =  faceSpecSimple3
 
     pure spec
 
-textureDimension = 512
-textureWidth = textureDimension
-textureHeight = textureDimension
 dimension = 0.5
 frameInterval = 50
 viewportWidth  = frint windowWidth  :: GLsizei
@@ -790,6 +805,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     (colorShader, textureShader) <- initShaders log
 
     let map' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
+        texMaps :: [GraphicsTextureMapping]
         texMaps                      = map map' $ zip texNames faceSpec'
 
         rotations | doInitRotate     = multMatrices [ rotateX 15, rotateY $ inv 15 ]
@@ -894,10 +910,25 @@ appLoop window app shaders texMaps flipper t rands args = do
             (texName0:_) = texNames
             theTexName = texName0
 
-            (wolfVert', wolfTexCoords') = wolf
-            -- triangles' = nAtATime 3 wolfVert'
+            wolf :: ([Vertex3 Float], [Vertex4 Float])
+            wolf = undefined
+            wolfVert' = undefined
+            wolfTexCoords' = undefined
+            len' = undefined
 
-            len' = length wolfVert'
+            framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
+            textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
+            objFilename' = "wolf_000001.obj"
+            mtlFilename' = "wolf_000001.mtl"
+            configYaml' = textureConfigYaml
+
+            config = Cmog.Config framesDir' textureDir' objFilename' mtlFilename' configYaml'
+
+        wolfSeq <- Cmog.parse config
+        print wolfSeq
+
+            -- (wolfVert', wolfTexCoords') = wolf
+            -- len' = length wolfVert'
 
         useShader log prog
         uniform log "model" um =<< toMGC model
@@ -1249,6 +1280,7 @@ updateTextures log texMaps = mapM map' texMaps where
         graphicsData' <- updateTexture log graphicsData tex texobj
         pure $ GraphicsTextureMapping graphicsData' tex texobj
 
+updateTexture :: Log -> GraphicsData -> Tex -> GL.TextureObject -> IO GraphicsData
 updateTexture log graph@(GraphicsSingle img False) tex texobj = pure graph
 updateTexture log       (GraphicsSingle img True) tex texobj = do
     transferImageToTexture log img tex texobj
@@ -1267,17 +1299,21 @@ updateTexture log       (GraphicsMoving imgs ticks ticksElapsed) tex texobj
     te' = (ticksElapsed + 1) `mod` ticks
 
 updateTexture log       (GraphicsSingleCairo Nothing cFrames) tex texobj = do
-    updateTextureCairo True tex $ head cFrames
+    let width = texWidth tex
+        height = texHeight tex
+    updateTextureCairo True tex (head cFrames) width height
     texImage' log tex texobj
     pure $ GraphicsSingleCairo Nothing (tail' cFrames)
 
 updateTexture log       (GraphicsSingleCairo (Just img) cFrames) tex texobj = do
     transferImageToTexture log img tex texobj
-    updateTextureCairo False tex $ head cFrames
+    let width = texWidth tex
+        height = texHeight tex
+    updateTextureCairo False tex (head cFrames) width height
     texImage' log tex texobj
     pure $ GraphicsSingleCairo (Just img) (tail' cFrames)
 
-updateTextureCairo clear tex cFrame = do
+updateTextureCairo clear tex cFrame textureWidth textureHeight = do
     let cSurf' = getCSurf tex
     when (isJust cSurf') .
         C.renderWith (fromJust cSurf') $ renderToCairoSurface clear textureWidth textureHeight cFrame
@@ -1291,43 +1327,58 @@ tail' xs = tail xs
 transferImageToTexture log img tex texobj
   | isTex8888 tex = do
       let raw = tex8888RawPixelData tex
-      copyJPImageToPixelArray8888_RGBA img raw
+          w = texWidth tex
+          h = texHeight tex
+      copyJPImageToPixelArray8888_RGBA w h img raw
   | isTex565 tex = do
       let raw = tex565RawPixelData tex
-      copyJPImageToPixelArray565 log img raw
+          w = texWidth tex
+          h = texHeight tex
+      copyJPImageToPixelArray565 log w h img raw
   | isTex8888_565 tex = do
       -- transfer the image to the 8888 array, so it can still be drawn on
       -- by cairo, and then all transferred togther to 565.
       let raw = tex8888_565RawPixelData8888 tex
-      copyJPImageToPixelArray8888_RGBA img raw
+          w = texWidth tex
+          h = texHeight tex
+      copyJPImageToPixelArray8888_RGBA w h img raw
   | otherwise = error "transferImageToTexture: unknown type"
 
 -- actually transfer the pixel array into the texture.
 -- all textures, thus all faces, need to do this at least once.
 
 texImage' log tex texobj
-  | isTex8888 tex     = let gl = tex8888GLPixelData tex in texImage8888' texobj gl
-  | isTex565 tex      = let gl = tex565GLPixelData tex  in texImage565' texobj gl
+  | isTex8888 tex     = let gl = tex8888GLPixelData tex
+                            w = texWidth tex
+                            h = texHeight tex
+                        in  texImage8888' w h texobj gl
+  | isTex565 tex      = let gl = tex565GLPixelData tex
+                            w = texWidth tex
+                            h = texHeight tex
+                        in texImage565' w h texobj gl
                             -- | isTex8888_Luminance tex = let gl = tex8888_LuminanceGLPixelData tex  in texImage8888_Luminance' texobj gl
   | isTex8888_565 tex =                                    texImage8888_565' log texobj tex
   | otherwise         = error "texImage': unknown type"
 
-texImage'' internalFormat texobj gl = do
+texImage'' internalFormat width height texobj gl = do
+    let texWidth' = frint width
+        texHeight' = frint height
     let level' = 0
-        texDim' = frint textureDimension
-        texImage2D' = texImage2D Texture2D NoProxy level' internalFormat (TextureSize2D texDim' texDim') 0
+        texImage2D' = texImage2D Texture2D NoProxy level' internalFormat (TextureSize2D texWidth' texHeight') 0
     textureBinding Texture2D $= Just texobj
     texImage2D' gl
 
 texImage8888'     = texImage'' GL.RGBA8 -- GL_RGBA
-
 texImage565'      = texImage'' GL.RGB' -- GL_RGB
+
 texImage8888_565' log texobj tex = do
     let ary8888 = tex8888_565RawPixelData8888 tex
         ary565 = tex8888_565RawPixelData565 tex
         gl565 = tex8888_565GLPixelData565 tex
-    copyRaw8888To565 log ary8888 ary565
-    texImage565' texobj gl565
+        w = texWidth tex
+        h = texHeight tex
+    copyRaw8888To565 log w h ary8888 ary565
+    texImage565' w h texobj gl565
 
 -- • mapping from eye coordinates to NDC.
 -- • near plane of 1.5 gives a decent FOV (no fish-eye), but we have to push
@@ -1625,10 +1676,10 @@ cylinderTest app shaders texMaps radiusRatio t args = do
     uniform log "udvot" udvot glFalseF
 
     let textureSheet radius' = do
-        forM_ (zip5 [1 .. 4] [tx'0, tx'1, tx'2, tx'3] (angles 4) (drop 1 $ angles 4) [texName0, texName1, texName0, texName1]) $ \(_, tx, a, b, texName) -> do
-            let cylinderTex'    = cylinderTex app' shaderT npoly h radius' a b texName tx
-                coneSectionTex' = coneSectionTex app' shaderT npoly h radius' (radius' * radiusRatio) a b texName tx
-            if radiusRatio == 1 then cylinderTex' else coneSectionTex'
+            forM_ (zip5 [1 .. 4] [tx'0, tx'1, tx'2, tx'3] (angles 4) (drop 1 $ angles 4) [texName0, texName1, texName0, texName1]) $ \(_, tx, a, b, texName) -> do
+                let cylinderTex'    = cylinderTex app' shaderT npoly h radius' a b texName tx
+                    coneSectionTex' = coneSectionTex app' shaderT npoly h radius' (radius' * radiusRatio) a b texName tx
+                if radiusRatio == 1 then cylinderTex' else coneSectionTex'
     textureSheet radius
     textureSheet $ radius * 0.98
 
@@ -1682,4 +1733,29 @@ ifNotFalseM p t = ifM (pure p) t (pure False)
 getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
     view' = app & appMatrix & snd3 & stackPop'
     curTranslateZ' = (DMX.!) view' (4, 3) -- row, col, 1-based
+
+
+
+
+textureConfigYaml :: ByteString
+textureConfigYaml = [QQ.r|
+# --- the objectName mappings are just guesses.
+textures:
+  - image: fur.png.base64
+    width: 400
+    height: 200
+    objectName: Cube.001
+  - image: body.png.base64
+    width: 4096
+    height: 2048
+    objectName: Cube.002
+  - image: eyes-1.png.base64
+    width: 256
+    height: 256
+    objectName: Cube
+  - image: eyes-2.png.base64
+    width: 256
+    height: 256
+    objectName: Plane
+|]
 

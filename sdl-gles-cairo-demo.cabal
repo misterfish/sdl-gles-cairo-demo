@@ -27,23 +27,22 @@ library
       Graphics.SGCDemo.Draw
       Graphics.SGCDemo.Events
       Graphics.SGCDemo.Extras
-      Graphics.SGCDemo.ImageMock
+      Graphics.SGCDemo.ImageData
       Graphics.SGCDemo.Launch
       Graphics.SGCDemo.Pixels
       Graphics.SGCDemo.Shader
       Graphics.SGCDemo.Types
       Graphics.SGCDemo.Util
       Graphics.SGCDemo.Util2
-      Graphics.SGCDemo.Wolf
+      -- Graphics.SGCDemo.Wolf
   c-sources:
       src/clib.c
-  other-modules:
-      Paths_sdl_cairo_gl_photo_cube
   hs-source-dirs:
       src
   ghc-options: -XPatternSynonyms
   build-depends:
-      sdltricks-cat >=0.1.0.4
+      sdl-cairo-demo-cat >= 0.1.0.4 && <0.1.1
+    , mesh-obj-gles >= 0.1.0.0 && <0.1.1
     , JuicyPixels >=3.2.8.3
     , OpenGL >=3.0.2.0 && <3.0.3
     , OpenGLRaw >=3.2.7.0 && <3.2.8
@@ -57,10 +56,12 @@ library
     , linear >=1.20.7 && <1.21
     , sdl2 >=2.3.0 && <2.4
     , svg-tree >=0.6.2.1 && <0.6.3
+    , split >= 0.2.3.3 && <0.2.4
     , time
     , vector >=0.11.0.0
     , random>= 1.1 && <2
     , matrix >=0.3.5 && <0.4
     , Stack >=0.3.2 && <0.4
     , cond >=0.4.1.1 && <0.4.2
+    , raw-strings-qq >= 1.1 && <2
   default-language: Haskell2010

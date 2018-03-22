@@ -258,7 +258,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , graphicsTextureMappingTexture
                                         , graphicsTextureMappingTextureObject
                                         , isTex8888
-                                        , isTex8888_Luminance
+--                                         , isTex8888_Luminance
                                         , isTex565
                                         , isTex8888_565
                                         , flHemisphere

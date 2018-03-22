@@ -1,5 +1,5 @@
 -- • DynamicImage is JP's Image type, which is backed by a vector of Word8.
--- • all images must be 512 x 512 -- no boundary checks performed.
+-- • all images must be powers of 2; width and height can differ.
 -- • there would be a noticeable performance benefit to decoding everything as
 --   RGB instead of RGBA here -- alpha on the texture images could be useful
 --   for some very specific case, but in general it's not necessary. after
@@ -76,20 +76,20 @@ rgb888To565 r g b = do
     let l = rgb888To565Hs r g b
     pure l
 
-copyJPImageToPixelArray8888_RGBA :: DynamicImage -> Ptr CUChar -> IO ()
-copyJPImageToPixelArray8888_RGBA img ary = do
+copyJPImageToPixelArray8888_RGBA :: Int -> Int -> DynamicImage -> Ptr CUChar -> IO ()
+copyJPImageToPixelArray8888_RGBA w h img ary = do
     let imgrgba = convertRGBA8 img
-        n = 512 * 512 * 4
+        n = w * h * 4
         theData' = dImgData imgrgba
         (fptr, _) = unsafeToForeignPtr0 theData'
         poke' ptr = copyArray (castPtr ary) ptr n
 
     withForeignPtr fptr poke'
 
-copyJPImageToPixelArray8880_RGB :: DynamicImage -> Ptr CUChar -> IO ()
-copyJPImageToPixelArray8880_RGB img ary = do
+copyJPImageToPixelArray8880_RGB :: Int -> Int -> DynamicImage -> Ptr CUChar -> IO ()
+copyJPImageToPixelArray8880_RGB w h img ary = do
     let imgrgba = convertRGB8 img
-        n = 512 * 512
+        n = w * h
         theData' = dImgData imgrgba
         (fptr, _) = unsafeToForeignPtr0 theData'
         poke' ptr = c_transfer_888_8880 n (castPtr ptr) ary
@@ -97,20 +97,20 @@ copyJPImageToPixelArray8880_RGB img ary = do
 
 copyJPImageToPixelArray565 = copyJPImageToPixelArray565C
 
-copyJPImageToPixelArray565C :: Log -> DynamicImage -> Ptr CUShort -> IO ()
-copyJPImageToPixelArray565C log img ary = do
+copyJPImageToPixelArray565C :: Log -> Int -> Int -> DynamicImage -> Ptr CUShort -> IO ()
+copyJPImageToPixelArray565C log w h img ary = do
     -- here we can save some time by skipping alpha right away, since it's
     -- thrown away immediately anyway.
     let imgrgba = convertRGB8 img
-        n = 512 * 512
+        n = w * h
         theData' = dImgData imgrgba
         (fptr, _) = unsafeToForeignPtr0 theData'
         poke' ptr = c_transfer_888_565 n (castPtr ptr) ary
     withForeignPtr fptr poke'
 
-copyRaw8888To565 :: Log -> Ptr CUChar -> Ptr CUShort -> IO ()
-copyRaw8888To565 log from to = c_transfer_8888_565 len' from to where
-    len' = 512 * 512
+copyRaw8888To565 :: Log -> Int -> Int -> Ptr CUChar -> Ptr CUShort -> IO ()
+copyRaw8888To565 log w h from to = c_transfer_8888_565 len' from to where
+    len' = w * h
 
 dImgData :: Image a -> DVS.Vector (PixelBaseComponent a)
 dImgData (Image _ _ data')     = data'
@@ -128,7 +128,6 @@ rgb888To565C r g b = c_convert_888_565 rr gg bb where
 copyJPImageToPixelArray565HsNew :: Log -> DynamicImage -> Ptr CUShort -> IO ()
 copyJPImageToPixelArray565HsNew log img ary = do
     let imgrgba = convertRGBA8 img
-        -- actually we know that it's 512 * 512 * x
         veclen' = DVS.length theData'
         theData' = dImgData imgrgba
         x = 4
@@ -155,10 +154,10 @@ copyJPImageToPixelArray565HsNew log img ary = do
 --              m = n * x
 --     mapM_ print' [0 .. 99]
 
-copyRaw8888To565NewHs :: Log -> Ptr CUChar -> Ptr CUShort -> IO ()
-copyRaw8888To565NewHs log from to = do
+copyRaw8888To565NewHs :: Log -> Int -> Int -> Ptr CUChar -> Ptr CUShort -> IO ()
+copyRaw8888To565NewHs log w h from to = do
     copyRaw8888To565' (castPtr from, to) len' 0 where
-        len' = 512 * 512
+        len' = w * h
 
 -- uses *3*
 copyRaw8888To565' :: (Ptr CUChar, Ptr CUShort) -> Int -> Int -> IO ()
@@ -193,7 +192,6 @@ debug | doDebug == True = info
 copyJPImageToPixelArray8888_BGRA :: DynamicImage -> Ptr CUChar -> IO ()
 copyJPImageToPixelArray8888_BGRA img ary = do
     let imgrgba = convertRGBA8 img
-        -- actually we know that it's 512 * 512 * x
         veclen' = DVS.length theData'
         theData' = dImgData imgrgba
 
@@ -208,7 +206,6 @@ copyJPImageToPixelArray8888_BGRA img ary = do
 copyJPImageToPixelArray565Old :: Log -> DynamicImage -> Ptr CUShort -> IO ()
 copyJPImageToPixelArray565Old log img ary = do
     let imgrgba = convertRGBA8 img
-        -- actually we know that it's 512 * 512 * x
         veclen' = DVS.length theData'
         theData' = dImgData imgrgba
 
@@ -226,7 +223,6 @@ copyJPImageToPixelArray565Old log img ary = do
 copyJPImageToPixelArray8888_RGBAOld :: DynamicImage -> Ptr CUChar -> IO ()
 copyJPImageToPixelArray8888_RGBAOld img ary = do
     let imgrgba = convertRGBA8 img
-        -- actually we know that it's 512 * 512 * x
         veclen' = DVS.length theData'
         theData' = dImgData imgrgba
         ary' = castPtr ary :: Ptr Word8
@@ -234,10 +230,10 @@ copyJPImageToPixelArray8888_RGBAOld img ary = do
 
     forM_ [0 .. veclen' - 1] poke'
 
-copyRaw8888To565Old :: Log -> Ptr CUChar -> Ptr CUShort -> IO ()
-copyRaw8888To565Old log from to = do
+copyRaw8888To565Old :: Log -> Int -> Int -> Ptr CUChar -> Ptr CUShort -> IO ()
+copyRaw8888To565Old log w h from to = do
     let info' = info log
-    let len = 512 * 512 * 3
+    let len = w * h * 3
         ns = zip [0, 4 .. len - 1] [0 .. ]
         poke' (n, m) = do
             r <- peekElemOff from $ (n + 0)
