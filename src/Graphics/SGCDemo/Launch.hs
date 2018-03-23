@@ -1772,14 +1772,13 @@ initWolf = do
 drawWolf app wolfSeq textureShader texMaps t args = do
     let _app = app & appMultiplyModel model'
         log = appLog app
-        arg1' = read $ args !! 1 :: Float
-        arg2' = read $ args !! 2 :: Float
         model' = multMatrices [ scaleY 1.9
                               , scaleX 1.9
                               , scaleZ 1.9
-                              , rotateZ 270
-                              , translateX arg1'
-                              , translateZ arg2' ]
+                              , rotateY 45
+                              , rotateX $ inv 90
+                              , translateX $ inv 0.25
+                              , translateZ 0.275 ]
         appmatrix = appMatrix _app
         (model, view, proj) = map3 stackPop' appmatrix
 
