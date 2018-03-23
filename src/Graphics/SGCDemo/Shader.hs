@@ -163,7 +163,6 @@ activateTexture log texName utt = do
     let TextureObject id' = texName
         tag1 = show $ id' - 1
         tag2 = show texName
-    -- info log $ printf "texname %s texunit %s" tag2 tag1
 
     -- both calls are necessary.
     wrapGL log ("set activeTexture " <> tag1) $ activeTexture $= TextureUnit (id' - 1)

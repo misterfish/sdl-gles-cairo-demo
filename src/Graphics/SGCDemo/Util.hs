@@ -4,6 +4,7 @@ module Graphics.SGCDemo.Util ( (<|.>)
                              , checkSDLError
                              , benchStart
                              , benchUpdate
+                             , sort
                              , printMatrixDouble
                              , color
                              , col8
@@ -374,3 +375,26 @@ nAtATime n xs
   | otherwise = left' : tail' where
     tail' = nAtATime n right'
     (left', right') = splitAt n xs
+
+-- | @test
+sort :: Ord a => [a] -> [a]
+sort = quickSort
+
+-- | @test
+quickSort :: Ord a => [a] -> [a]
+quickSort [] = []
+quickSort ss = sorted' where
+    l :: Int
+    l = length ss
+    pivot = ss !! pivotIdx
+    pivotIdx = floor $ frint l / 2
+    (left, right, _) = foldl' (quickSort' pivotIdx pivot) ([], [], 0) ss
+    sorted' = quickSort left <> [pivot] <> quickSort right
+
+quickSort' pivotIdx pivot (l, r, i) x = (ll, rr, ii) where
+    ii = i + 1
+    (ll, rr)
+      | i == pivotIdx  = (l,        r)
+      | x <= pivot     = (l <> [x], r)
+      | otherwise      = (l,        r <> [x])
+

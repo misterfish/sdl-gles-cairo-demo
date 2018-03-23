@@ -7,36 +7,38 @@
 -- • here we demo several ways of drawing on a texture, for rendering to
 --   e.g. a cube face.
 --
--- • single image: the texture is prepared once and bound to a named texture
--- object (actually an integer internally).
+-- • TextureObjects needs to be created by GL (they are called 'names' or
+--   TextureObjects but are actually just an integer internally).
+--
+-- • single image: the texture is prepared once and bound.
 --
 -- • multiple images: the texture is prepared on each iteration (or multiple
--- thereof) of the render loop.
+--   thereof) of the render loop.
 --
 -- • single image with cairo: draw on top of the image using cairo.
 --
 -- • no image with cairo: special case of previous one -- just clear the
--- cairo surface before drawing.
+--   cairo surface before drawing.
 --
 -- • multiple images with cairo.
 --
 -- • we manually prepare the backing arrays and copy pixels in using poke.
--- when using cairo, the same backing array (with caveats) is tied to a
--- cairo surface, and then we can just draw on it.
+--   when using cairo, the same backing array (with caveats) is tied to a
+--   cairo surface, and then we can just draw on it.
 --
 -- • the arrays are either CUShort or CUChar arrays. on my android the final
--- internal format has to be '565' format, which is one short per pixel. on
--- the computer, '8888' also works (4 bytes per pixel). so that explains the
--- 555 and 8888 modes.
+--   internal format has to be '565' format, which is one short per pixel.
+--   on the computer, '8888' also works (4 bytes per pixel). so that
+--   explains the 555 and 8888 modes.
 --
 -- • with cairo there's another complication: you can't draw on 565 arrays.
--- so for cairo surfaces on mobile, we use 8888_565: first draw in a 8888
--- array and then copy it to a 565 array. performance is reasonable, even
--- when doing the copy in the render loop.
+--   so for cairo surfaces on mobile, we use 8888_565: first draw in a 8888
+--   array and then copy it to a 565 array. performance is reasonable, even
+--   when doing the copy in the render loop.
 --
 -- • the famous texImage2D call is the one which gets the pixel array into
--- the texture, either once (for single images) or in the render loop (for
--- moving images and/or cairo).
+--   the texture, either once (for single images) or in the render loop (for
+--   moving images and/or cairo).
 --
 --   autogen for textures can be convenient: you can leave off the texCoord
 --   calls in between vertices when drawing the polygon.
@@ -145,6 +147,7 @@ import           Control.Monad ( (<=<), unless, guard, when, forM_, forM )
 import           Control.Monad.IO.Class ( liftIO )
 import           Control.Concurrent ( threadDelay )
 import qualified Data.Vector          as DV  ( Vector
+                                             , toList
                                              , fromList )
 import qualified Data.Vector.Storable as DVS ( (!)
                                              , Vector
@@ -159,6 +162,8 @@ import qualified Data.ByteString.Base64 as B64 ( decode )
 import           Data.Stack ( Stack, stackNew, stackPush, stackPop )
 import           Control.Conditional ( ifM )
 
+import           System.FilePath.Glob as Sfg ( globDir1 )
+import qualified System.FilePath.Glob as Sfg ( compile )
 import "matrix"  Data.Matrix        as DMX ( (!)
                                            , Matrix
                                            , fromList
@@ -215,7 +220,7 @@ import           Graphics.Rendering.OpenGL as GL
                  , GLint
                  , Matrix
                  , MatrixOrder ( RowMajor, ColumnMajor )
-                 , TextureObject
+                 , TextureObject (TextureObject)
                  , MatrixComponent
                  , Program
                  , GLubyte
@@ -412,7 +417,24 @@ import           Graphics.DemoCat.Render.Render     as SCC ( renderFrames )
 
 -- mesh-obj-gles
 import           Codec.MeshObjGles.Parse as Cmog ( Config (Config)
+                                                 , TextureConfig (TextureConfig)
+                                                 , Sequence (Sequence)
+                                                 , SequenceFrame (SequenceFrame)
+                                                 , Obj (Obj)
+                                                 , Texture (Texture)
+                                                 , Burst (Burst)
+                                                 , Vertices
+                                                 , TexCoords
+                                                 , TextureMap
+                                                 , ObjName
+                                                 , MtlName
+                                                 , Normals
+                                                 , makeInfiniteSequence
+                                                 , tailSequence
                                                  , parse )
+
+import qualified Codec.MeshObjGles.Parse as Cmog ( Vertex2 (Vertex2)
+                                                 , Vertex3 (Vertex3) )
 
 import           Graphics.SGCDemo.ImageData ( imageNefeli
                                             , imageNeske
@@ -519,6 +541,7 @@ import           Graphics.SGCDemo.Util ( checkSDLError
                                        , appMultiplyModel
                                        , appMultiplyRightModel
                                        , appMultiplyView
+                                       , sort
                                        , wrapGL )
 
 import           Graphics.SGCDemo.Pixels ( copyJPImageToPixelArray8888_RGBA
@@ -638,9 +661,9 @@ doInitRotate   = True
 doBorders      = True
 doCube         = True
 doCylinder     = False
-doConeSection  = True
+doCarrousel    = False
 doTorus        = False
-doWolf         = False
+doWolf         = True
 doBackground   = False
 
 doLinesTest    = False
@@ -663,11 +686,11 @@ shadeModel'                   = Smooth
 
 sphereColor = color 0 57 73 255
 
-faceSpec args rands = do
-    let (withCairo, noCairo) =
-            if output565 then (newTex8888_565WithCairo, newTex565)
-                         else (newTex8888WithCairo, newTex8888NoCairo)
+(withCairo, noCairo) =
+    if output565 then (newTex8888_565WithCairo, newTex565)
+                 else (newTex8888WithCairo, newTex8888NoCairo)
 
+faceSpec args rands = do
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
     let g1 = GraphicsSingle (decodeImage' imageNefeli) True
@@ -763,6 +786,17 @@ faceSpec args rands = do
 
     pure spec
 
+wolfSpec spec = do
+    let w n   = fst3 . spec' $ n
+        h n   = snd3 . spec' $ n
+        img n = thd3 . spec' $ n
+        spec' = (spec !!)
+    [t1, t2, t3, t4] <- flip mapM [0 .. 3] $ \n ->
+        noCairo (w n) (h n)
+    let [g1, g2, g3, g4] = flip map [0 .. 3] $ \n ->
+            GraphicsSingle (decodeImage' . img $ n) True
+    pure [(t1, g1), (t2, g2), (t3, g3), (t4, g4)]
+
 dimension = 0.5
 frameInterval = 50
 viewportWidth  = frint windowWidth  :: GLsizei
@@ -797,16 +831,35 @@ launch_ (androidLog, androidWarn, androidError) args = do
     -- debug' $ "image: " ++ (show . BS.take 30 $ imageBase64) ++ "..."
 
     rands <- randoms
+    wolfSeq <- initWolf :: IO Cmog.Sequence
+    -- print wolfSeq
+    -- get sizes & pics xxx
     faceSpec' <- faceSpec args rands
+    wolfSpec' <- wolfSpec [ (512, 512, imageNeske)
+                          , (512, 512, imageNeske)
+                          , (512, 512, imageNeske)
+                          , (512, 512, imageNeske) ]
 
-    texNames <- initGL log window (length faceSpec') args
+    let numWolfTextures = 4
+        numCubeTextures = length faceSpec'
+
+    texNames <- initGL log window (numCubeTextures + numWolfTextures) args
+    let (texNamesCube, texNamesWolf) = splitAt numCubeTextures texNames
 
     debug' "initShaders"
     (colorShader, textureShader) <- initShaders log
 
-    let map' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
-        texMaps :: [GraphicsTextureMapping]
-        texMaps                      = map map' $ zip texNames faceSpec'
+    let toGraphTextMapping' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
+        texMapsCube :: [GraphicsTextureMapping]
+        texMapsCube = map toGraphTextMapping' $ zip texNamesCube faceSpec'
+
+        texMapsWolf :: [GraphicsTextureMapping]
+        texMapsWolf = map toGraphTextMapping' $ zip texNamesWolf wolfSpec'
+
+    info log $ printf "texNamesCube: %s" (show texNamesCube)
+    info log $ printf "texNamesWolf: %s" (show texNamesWolf)
+
+    let texMaps = (texMapsCube, texMapsWolf)
 
         rotations | doInitRotate     = multMatrices [ rotateX 15, rotateY $ inv 15 ]
                   | otherwise        = identityMatrix
@@ -826,9 +879,11 @@ launch_ (androidLog, androidWarn, androidError) args = do
                    & (appReplaceProj =<< initProjection app)
 
     debug' "starting loop"
-    appLoop window app' (colorShader, textureShader) texMaps (NotFlipping FlipUpper) 0 rands args
+    do  let Sequence frames = wolfSeq
+        info' $ printf "wolf seq length %d" (length frames)
+    appLoop window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence wolfSeq) (NotFlipping FlipUpper) 0 rands args
 
-appLoop window app shaders texMaps flipper t rands args = do
+appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeq flipper t rands args = do
     let log = appLog app
         info' = info log
         debug' = debug log
@@ -837,7 +892,10 @@ appLoop window app shaders texMaps flipper t rands args = do
     debug' "* looping"
 
     debug' "updating textures"
-    texMaps' <- updateTextures log texMaps
+    texMapsCube' <- updateTextures log texMapsCube
+    -- GraphicsSingle, so technically not necessary to do it on every
+    -- iteration, but has to happen at least once.
+    texMapsWolf' <- updateTextures log texMapsWolf
     debug' "done updating textures"
 
     -- let app' = app & (appReplaceView $   initView app)
@@ -882,82 +940,21 @@ appLoop window app shaders texMaps flipper t rands args = do
 
     when doShadersTest $ testShaders log colorShader args
     when doLinesTest   $ testLineStroke app'' colorShader args
-    -- shouldn't these all be texMaps' ?
-    when doConeSection $ coneSectionTest app'' (colorShader, textureShader) texMaps t args
+    ------ shouldn't these all be texMaps' ?
+    when doCarrousel $ coneSectionTest app'' (colorShader, textureShader) texMapsCube' t args
     hit <- ifNotFalseM doCube $ do
-        _app <- cube app'' (colorShader, textureShader) texMaps' t flipper args
+        _app <- cube app'' (colorShader, textureShader) texMapsCube' t flipper args
         checkVertexHit _app click
-    when doCylinder    $ cylinderTest app'' (colorShader, textureShader) texMaps 1 t args
-    when doTorus       $ torusTest app'' (colorShader, textureShader) texMaps t args
-    when doWolf        $ do
-        let _app = app'' & appMultiplyModel model'
-            model' = multMatrices [ scaleY 2.0
-                                  , scaleX 2.0
-                                  , scaleZ 2.0 ]
-            appmatrix = appMatrix _app
-            (model, view, proj) = map3 stackPop' appmatrix
-            unvertex3' (Vertex3 x y z) = (x, y, z)
-            unvertex4' (Vertex4 x y z w) = (x, y, z, w)
-
-            -- VertexDataC ap ac an = shaderVertexData colorShader
-            VertexDataT vp vt vn utt = shaderVertexData textureShader
-
-            theShader = textureShader
-            prog         = shaderProgram theShader
-            (um, uv, up) = shaderMatrix theShader
-
-            texNames = map graphicsTextureMappingTextureObject texMaps
-            (texName0:_) = texNames
-            theTexName = texName0
-
-            wolf :: ([Vertex3 Float], [Vertex4 Float])
-            wolf = undefined
-            wolfVert' = undefined
-            wolfTexCoords' = undefined
-            len' = undefined
-
-            framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
-            textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
-            objFilename' = "wolf_000001.obj"
-            mtlFilename' = "wolf_000001.mtl"
-            configYaml' = textureConfigYaml
-
-            config = Cmog.Config framesDir' textureDir' objFilename' mtlFilename' configYaml'
-
-        wolfSeq <- Cmog.parse config
-        print wolfSeq
-
-            -- (wolfVert', wolfTexCoords') = wolf
-            -- len' = length wolfVert'
-
-        useShader log prog
-        uniform log "model" um =<< toMGC model
-        uniform log "view" uv =<< toMGC view
-        uniform log "proj" up =<< toMGC proj
-        activateTexture log theTexName utt
-        vPtr <- pushVertices log vp . map unvertex3' $ wolfVert'
-        let map' n' = [ (m', m', 0.0, 1.0)
-                      , (m' + 0.1, m' + 0.1, 0.0, 1.0)
-                      , (1.0, 1.0, 0.0, 1.0) ] where
-                l' = frint $ len' - 1
-                m' = (/ l') . frint $ n'
-        tcPtr <- pushTexCoords log vt . map unvertex4' $ wolfTexCoords'
-        nPtr <- pushNormals log vn . map (const $ vec4 0 0 1.0 1.0 ) $ [ 1 .. len' ]
-        attrib log "vp" vp Enabled
-        attrib log "vt" vt Enabled
-        attrib log "vn" vn Enabled
-        wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
-        attrib log "vn" vn Disabled
-        attrib log "vp" vp Disabled
-        attrib log "vt" vt Disabled
-        free vPtr
-        free tcPtr
+    when doCylinder    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
+    when doTorus       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
+    when doWolf        $ drawWolf app'' wolfSeq textureShader texMapsWolf' t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
     let reloop = do let flipper' = updateFlipper flipper hit
                     threadDelayMs frameInterval
-                    appLoop window app'' shaders texMaps' flipper' (t + 1) (tail rands) args
+                    appLoop window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence wolfSeq) flipper' (t + 1) (tail rands) args
+                    -- appLoop window app'' shaders (texMapsCube', texMapsWolf') wolfSeq flipper' (t + 1) (tail rands) args
 
     if qPressed then pure () else reloop
 
@@ -1759,3 +1756,89 @@ textures:
     objectName: Plane
 |]
 
+initWolf = do
+    let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
+        textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
+        mtlFilename' = framesDir' <> "/wolf_000100.mtl"
+        objFilenameGlob = "wolf*.obj"
+        configYaml' = textureConfigYaml
+
+    objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
+    let config = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml'
+
+    Cmog.parse config
+
+
+drawWolf app wolfSeq textureShader texMaps t args = do
+    let _app = app & appMultiplyModel model'
+        log = appLog app
+        arg1' = read $ args !! 1 :: Float
+        arg2' = read $ args !! 2 :: Float
+        model' = multMatrices [ scaleY 1.9
+                              , scaleX 1.9
+                              , scaleZ 1.9
+                              , rotateZ 270
+                              , translateX arg1'
+                              , translateZ arg2' ]
+        appmatrix = appMatrix _app
+        (model, view, proj) = map3 stackPop' appmatrix
+
+        VertexDataT vp vt vn utt = shaderVertexData textureShader
+
+        theShader = textureShader
+        prog         = shaderProgram theShader
+        (um, uv, up) = shaderMatrix theShader
+
+        texNames = map graphicsTextureMappingTextureObject texMaps
+        (texName0:_) = texNames
+        theTexName = texName0
+
+        idx = read $ args !! 1 :: Int
+
+        Sequence frames' = wolfSeq
+        frame' = head frames'
+        SequenceFrame objs' = frame'
+        -- for this demo, just the first object (the main wolf body)
+        obj' = head objs'
+        Obj texture' bursts' = obj'
+        Texture imgBase64' width' height' = texture'
+        burst' = head bursts'
+        Burst vertices' texCoordsMb' normalsMb' material' = burst'
+
+        foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
+        foreignVertex2ToLocalVertex4 c d(Cmog.Vertex2 a b) = Vertex4 a b c d
+
+        -- wolf :: ([Vertex3 Float], [Vertex4 Float])
+        wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
+        thing = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+        wolfTexCoords' = maybe error' thing texCoordsMb'
+        -- error' = error "tex coords were Nothing"
+        error' = []
+        len' = length wolfVert'
+
+    useShader log prog
+    uniform log "model" um =<< toMGC model
+    uniform log "view" uv =<< toMGC view
+    uniform log "proj" up =<< toMGC proj
+    --let theTexName = TextureObject 1
+    activateTexture log theTexName utt
+    vPtr <- pushVertices log vp . map unvertex3 $ wolfVert'
+--     let map' n' = [ (m', m', 0.0, 1.0)
+--                   , (m' + 0.1, m' + 0.1, 0.0, 1.0)
+--                   , (1.0, 1.0, 0.0, 1.0) ] where
+--             l' = frint $ len' - 1
+--             m' = (/ l') . frint $ n'
+    tcPtr <- pushTexCoords log vt . map unvertex4 $ wolfTexCoords'
+    nPtr <- pushNormals log vn . map (const $ vec4 0 0 1.0 1.0 ) $ [ 1 .. len' ]
+    attrib log "vp" vp Enabled
+    attrib log "vt" vt Enabled
+    attrib log "vn" vn Enabled
+    wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
+    attrib log "vn" vn Disabled
+    attrib log "vp" vp Disabled
+    attrib log "vt" vt Disabled
+    free vPtr
+    free tcPtr
+
+unvertex3 (Vertex3 x y z) = (x, y, z)
+unvertex4 (Vertex4 x y z w) = (x, y, z, w)

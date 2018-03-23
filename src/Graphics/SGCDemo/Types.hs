@@ -257,6 +257,11 @@ texHeight tex@(Tex8888_565 _ _ _ _ _ _ _) = tex8888_565Height tex
 
 type Color = (Float, Float, Float, Float)
 
+-- These contain the image data and optionally the cairo frames and movie
+-- timings.
+-- They get coupled to a Tex (our structure which holds the texture arrays)
+-- and a TextureObject (GL's "texture name" integer).
+
 data GraphicsData
       -- single image, no cairo.
     = GraphicsSingle      { graphicsSingleImage       :: JP.DynamicImage
