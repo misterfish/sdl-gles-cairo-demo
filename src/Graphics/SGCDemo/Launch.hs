@@ -797,14 +797,11 @@ wolfSpec textureMap = wolfSpecGraphicsDecode textures' where
     textureConfigs' = values textureMap
 
 wolfSpecGraphicsDecode spec = do
-    print $ length spec
-    let w = fst3
-        h = snd3
-        img = thd3
-    ts <- flip mapM spec $ \spec' ->
-        noCairo (w spec') (h spec')
-    let gs = flip map spec $ \spec' ->
-            GraphicsSingle (decodeImage' . img $ spec') True
+    let w   =  fst3
+        h   =  snd3
+        img =  thd3
+        gs  =  flip map spec  $ \spec' -> GraphicsSingle (decodeImage' . img $ spec') True
+    ts      <- flip mapM spec $ \spec' -> noCairo (w spec') (h spec')
     pure $ zip ts gs
 
 dimension = 0.5
@@ -952,7 +949,7 @@ appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeq flipper t rands ar
         checkVertexHit _app click
     when doCylinder    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
     when doTorus       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
-    when doWolf        $ drawWolf app'' wolfSeq textureShader texMapsWolf' t args
+    when doWolf        $ drawWolf app'' wolfSeq textureShader texMapsWolf' flipper t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
@@ -1644,7 +1641,6 @@ cylinderTest app shaders texMaps radiusRatio t args = do
         circum     = 4 * h
         radius          = circum / 2 / pi
         texNames = map graphicsTextureMappingTextureObject texMaps
-        -- [texName0, texName1] = [head texNames, last texNames]
         (texName0:texName1:_) = texNames
 
         tx00 = Vertex4 0 0 0 1
@@ -1772,40 +1768,66 @@ initWolf configYaml = do
 
     Cmog.parse config
 
-drawWolf app wolfSeq textureShader texMaps t args = do
+drawWolf app wolfSeq textureShader texMaps flipper t args = do
     let _app = app & appMultiplyModel model'
         log = appLog app
+        flIsFlipping'
+          | NotFlipping _ <- flipper = False
+          | otherwise = True
+        (flIsUpper', flIsLower')
+          | flIsFlipping' = (False, False)
+          | flHemisphere flipper == FlipUpper = (True, False)
+          | otherwise = (False, True)
+        flAngleDeg' = flAngleDeg flipper
+        postRotateY'
+            -- 0 at start, 180 for full flip.
+          | flIsFlipping' = flAngleDeg'
+          | flIsUpper' = 0
+          | flIsLower' = 180
+        postTranslateZ'
+            -- 0 at start, 1.337 for full flip.
+          | flIsFlipping' = flAngleDeg' / 180 * 1.337
+          | flIsUpper' = 0
+          | flIsLower' = 1.337
         model' = multMatrices [ scaleY 1.9
                               , scaleX 1.9
                               , scaleZ 1.9
                               , rotateY 45
                               , rotateX $ inv 90
+                              , rotateY postRotateY'
+                              , translateZ postTranslateZ'
                               , translateX $ inv 0.25
                               , translateZ 0.275 ]
         appmatrix = appMatrix _app
+        prog         = shaderProgram textureShader
+        (um, uv, up) = shaderMatrix textureShader
         (model, view, proj) = map3 stackPop' appmatrix
-
-        VertexDataT vp vt vn utt = shaderVertexData textureShader
-
-        theShader = textureShader
-        prog         = shaderProgram theShader
-        (um, uv, up) = shaderMatrix theShader
-
---         texNames = map graphicsTextureMappingTextureObject texMaps
---         (texName0:_) = texNames
---         theTexName = texName0
-
-        idx = read $ args !! 1 :: Int
 
         Cmog.Sequence frames' = wolfSeq
         -- infinite list => head is fine.
         frame' = head frames'
         Cmog.SequenceFrame bursts' = frame'
-        -- for this demo, just the first burst (enough to paint something
+
+        -- for this demo, just the first n bursts (enough to paint something
         -- wolf-like)
-        burst' = head bursts'
-        -- Texture imgBase64' width' height' = texture'
-        Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst'
+        draw' = drawWolfBurst log appmatrix textureShader
+
+    when (flIsFlipping') . putStrLn $ printf "angle: %s" (show flAngleDeg')
+
+    useShader log prog
+    uniform log "model" um =<< toMGC model
+    uniform log "view" uv =<< toMGC view
+    uniform log "proj" up =<< toMGC proj
+
+    -- texture indices hardcoded for this demo.
+    mapM_ (draw' $ Just 9)  . take 4          $ bursts'
+    mapM_ (draw' $ Just 11) . take 1 . drop 4 $ bursts'
+
+-- textureIdx is a kludge -- should figure out dynamically. xxx
+drawWolfBurst log appmatrix textureShader textureIdxMb burst = do
+    let VertexDataT vp vt vn utt = shaderVertexData textureShader
+
+        Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
         textureMb' = Cmog.materialTexture material'
 
         foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
@@ -1813,23 +1835,14 @@ drawWolf app wolfSeq textureShader texMaps t args = do
 
         wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
         toTexCoordsMb = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
-        wolfTexCoords' = maybe error' toTexCoordsMb texCoordsMb'
+        wolfTexCoords' = maybe none' toTexCoordsMb texCoordsMb'
         -- normals xxx
 
-        -- error' = error "tex coords were Nothing" xxx
-        error' = []
-
+        none' = []
         len' = length wolfVert'
 
-    -- info log $ printf "theTexName: %s" (show theTexName)
+    activateTextureMaybe log utt textureIdxMb
 
-    useShader log prog
-
-    activateTextureMaybe log utt textureMb'
-
-    uniform log "model" um =<< toMGC model
-    uniform log "view" uv =<< toMGC view
-    uniform log "proj" up =<< toMGC proj
     vPtr <- pushVertices log vp . map unvertex3 $ wolfVert'
     tcPtr <- pushTexCoords log vt . map unvertex4 $ wolfTexCoords'
     nPtr <- pushNormals log vn . map (const $ vec4 0 0 1.0 1.0 ) $ [ 1 .. len' ]
@@ -1838,24 +1851,23 @@ drawWolf app wolfSeq textureShader texMaps t args = do
     attrib log "vn" vn Enabled
     wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
     attrib log "vn" vn Disabled
-    attrib log "vp" vp Disabled
     attrib log "vt" vt Disabled
+    attrib log "vp" vp Disabled
     free vPtr
     free tcPtr
 
 unvertex3 (Vertex3 x y z) = (x, y, z)
 unvertex4 (Vertex4 x y z w) = (x, y, z, w)
 
-activateTextureMaybe log utt textureMb = do
+-- xxx This will require a map of texture names (actual strings
+-- provided by the user) to TextureObjects.
+-- for this demo, hardcoded in drawWolf.
+activateTextureMaybe log utt textureIdxMb = do
     let none' = do
             info log "[no texture]"
             pure ()
-        activate' _ = activateTexture log texName utt
-        -- xxx This will require a map of texture names (actual strings
-        -- provided by the user) to TextureObjects.
-        -- for this demo, hardcoded to 9.
-        texName = TextureObject 9
-    maybe none' activate' textureMb
+        activate' idx = activateTexture log (TextureObject idx) utt
+    maybe none' activate' textureIdxMb
 
 values :: Dmap.Map k v -> [v]
 values = map snd . Dmap.toList
