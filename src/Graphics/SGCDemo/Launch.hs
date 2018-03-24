@@ -146,6 +146,8 @@ import           Data.Foldable ( find , foldl', foldr )
 import           Control.Monad ( (<=<), unless, guard, when, forM_, forM )
 import           Control.Monad.IO.Class ( liftIO )
 import           Control.Concurrent ( threadDelay )
+import           Data.Map as Dmap ( Map
+                                  , toList )
 import qualified Data.Vector          as DV  ( Vector
                                              , toList
                                              , fromList )
@@ -416,11 +418,10 @@ import qualified Graphics.Rendering.Cairo.Matrix as CM
 import           Graphics.DemoCat.Render.Render     as SCC ( renderFrames )
 
 -- mesh-obj-gles
-import           Codec.MeshObjGles.Parse as Cmog ( Config (Config)
+import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
                                                  , TextureConfig (TextureConfig)
                                                  , Sequence (Sequence)
                                                  , SequenceFrame (SequenceFrame)
-                                                 , Obj (Obj)
                                                  , Texture (Texture)
                                                  , Burst (Burst)
                                                  , Vertices
@@ -429,12 +430,15 @@ import           Codec.MeshObjGles.Parse as Cmog ( Config (Config)
                                                  , ObjName
                                                  , MtlName
                                                  , Normals
+                                                 , Vertex2 (Vertex2)
+                                                 , Vertex3 (Vertex3)
+                                                 , materialTexture
                                                  , makeInfiniteSequence
                                                  , tailSequence
+                                                 , tcImageBase64
+                                                 , tcWidth
+                                                 , tcHeight
                                                  , parse )
-
-import qualified Codec.MeshObjGles.Parse as Cmog ( Vertex2 (Vertex2)
-                                                 , Vertex3 (Vertex3) )
 
 import           Graphics.SGCDemo.ImageData ( imageNefeli
                                             , imageNeske
@@ -786,16 +790,22 @@ faceSpec args rands = do
 
     pure spec
 
-wolfSpec spec = do
-    let w n   = fst3 . spec' $ n
-        h n   = snd3 . spec' $ n
-        img n = thd3 . spec' $ n
-        spec' = (spec !!)
-    [t1, t2, t3, t4] <- flip mapM [0 .. 3] $ \n ->
-        noCairo (w n) (h n)
-    let [g1, g2, g3, g4] = flip map [0 .. 3] $ \n ->
-            GraphicsSingle (decodeImage' . img $ n) True
-    pure [(t1, g1), (t2, g2), (t3, g3), (t4, g4)]
+wolfSpec :: Cmog.TextureMap -> IO [(Tex, GraphicsData)]
+wolfSpec textureMap = wolfSpecGraphicsDecode textures' where
+    tex' config' = (Cmog.tcWidth config', Cmog.tcHeight config', Cmog.tcImageBase64 config')
+    textures' = map tex' textureConfigs'
+    textureConfigs' = values textureMap
+
+wolfSpecGraphicsDecode spec = do
+    print $ length spec
+    let w = fst3
+        h = snd3
+        img = thd3
+    ts <- flip mapM spec $ \spec' ->
+        noCairo (w spec') (h spec')
+    let gs = flip map spec $ \spec' ->
+            GraphicsSingle (decodeImage' . img $ spec') True
+    pure $ zip ts gs
 
 dimension = 0.5
 frameInterval = 50
@@ -831,16 +841,11 @@ launch_ (androidLog, androidWarn, androidError) args = do
     -- debug' $ "image: " ++ (show . BS.take 30 $ imageBase64) ++ "..."
 
     rands <- randoms
-    wolfSeq <- initWolf :: IO Cmog.Sequence
-    -- print wolfSeq
-    -- get sizes & pics xxx
+    (wolfSeq, wolfTextureMap) <- initWolf textureConfigYaml
     faceSpec' <- faceSpec args rands
-    wolfSpec' <- wolfSpec [ (512, 512, imageNeske)
-                          , (512, 512, imageNeske)
-                          , (512, 512, imageNeske)
-                          , (512, 512, imageNeske) ]
+    wolfSpec' <- wolfSpec wolfTextureMap
 
-    let numWolfTextures = 4
+    let numWolfTextures = length wolfSpec'
         numCubeTextures = length faceSpec'
 
     texNames <- initGL log window (numCubeTextures + numWolfTextures) args
@@ -879,7 +884,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
                    & (appReplaceProj =<< initProjection app)
 
     debug' "starting loop"
-    do  let Sequence frames = wolfSeq
+    do  let Cmog.Sequence frames = wolfSeq
         info' $ printf "wolf seq length %d" (length frames)
     appLoop window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence wolfSeq) (NotFlipping FlipUpper) 0 rands args
 
@@ -1734,40 +1739,38 @@ getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
 
 
 
+-- mappings are a little bit random and based a bit on guess-work (e.g. fur
+-- (fella) for teeth).
+-- Kd: diffuse texture map
+-- Ka: alpha texture map
+-- Ke: emissive texture map
 textureConfigYaml :: ByteString
 textureConfigYaml = [QQ.r|
-# --- the objectName mappings are just guesses.
 textures:
-  - image: fur.png.base64
-    width: 400
-    height: 200
-    objectName: Cube.001
-  - image: body.png.base64
+  - materialName: Material
+    image: body.png.base64
     width: 4096
     height: 2048
-    objectName: Cube.002
-  - image: eyes-1.png.base64
+  - materialName: eyes
+    image: eyes-2.png.base64
     width: 256
     height: 256
-    objectName: Cube
-  - image: eyes-2.png.base64
+  - materialName: fur
+    image: fur.png.base64
     width: 256
     height: 256
-    objectName: Plane
 |]
 
-initWolf = do
+initWolf configYaml = do
     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
         textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
         mtlFilename' = framesDir' <> "/wolf_000100.mtl"
         objFilenameGlob = "wolf*.obj"
-        configYaml' = textureConfigYaml
 
     objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
-    let config = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml'
+    let config = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml
 
     Cmog.parse config
-
 
 drawWolf app wolfSeq textureShader texMaps t args = do
     let _app = app & appMultiplyModel model'
@@ -1788,45 +1791,46 @@ drawWolf app wolfSeq textureShader texMaps t args = do
         prog         = shaderProgram theShader
         (um, uv, up) = shaderMatrix theShader
 
-        texNames = map graphicsTextureMappingTextureObject texMaps
-        (texName0:_) = texNames
-        theTexName = texName0
+--         texNames = map graphicsTextureMappingTextureObject texMaps
+--         (texName0:_) = texNames
+--         theTexName = texName0
 
         idx = read $ args !! 1 :: Int
 
-        Sequence frames' = wolfSeq
+        Cmog.Sequence frames' = wolfSeq
+        -- infinite list => head is fine.
         frame' = head frames'
-        SequenceFrame objs' = frame'
-        -- for this demo, just the first object (the main wolf body)
-        obj' = head objs'
-        Obj texture' bursts' = obj'
-        Texture imgBase64' width' height' = texture'
+        Cmog.SequenceFrame bursts' = frame'
+        -- for this demo, just the first burst (enough to paint something
+        -- wolf-like)
         burst' = head bursts'
-        Burst vertices' texCoordsMb' normalsMb' material' = burst'
+        -- Texture imgBase64' width' height' = texture'
+        Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst'
+        textureMb' = Cmog.materialTexture material'
 
         foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
         foreignVertex2ToLocalVertex4 c d(Cmog.Vertex2 a b) = Vertex4 a b c d
 
-        -- wolf :: ([Vertex3 Float], [Vertex4 Float])
         wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
-        thing = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
-        wolfTexCoords' = maybe error' thing texCoordsMb'
-        -- error' = error "tex coords were Nothing"
+        toTexCoordsMb = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+        wolfTexCoords' = maybe error' toTexCoordsMb texCoordsMb'
+        -- normals xxx
+
+        -- error' = error "tex coords were Nothing" xxx
         error' = []
+
         len' = length wolfVert'
 
+    -- info log $ printf "theTexName: %s" (show theTexName)
+
     useShader log prog
+
+    activateTextureMaybe log utt textureMb'
+
     uniform log "model" um =<< toMGC model
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
-    --let theTexName = TextureObject 1
-    activateTexture log theTexName utt
     vPtr <- pushVertices log vp . map unvertex3 $ wolfVert'
---     let map' n' = [ (m', m', 0.0, 1.0)
---                   , (m' + 0.1, m' + 0.1, 0.0, 1.0)
---                   , (1.0, 1.0, 0.0, 1.0) ] where
---             l' = frint $ len' - 1
---             m' = (/ l') . frint $ n'
     tcPtr <- pushTexCoords log vt . map unvertex4 $ wolfTexCoords'
     nPtr <- pushNormals log vn . map (const $ vec4 0 0 1.0 1.0 ) $ [ 1 .. len' ]
     attrib log "vp" vp Enabled
@@ -1841,3 +1845,18 @@ drawWolf app wolfSeq textureShader texMaps t args = do
 
 unvertex3 (Vertex3 x y z) = (x, y, z)
 unvertex4 (Vertex4 x y z w) = (x, y, z, w)
+
+activateTextureMaybe log utt textureMb = do
+    let none' = do
+            info log "[no texture]"
+            pure ()
+        activate' _ = activateTexture log texName utt
+        -- xxx This will require a map of texture names (actual strings
+        -- provided by the user) to TextureObjects.
+        -- for this demo, hardcoded to 9.
+        texName = TextureObject 9
+    maybe none' activate' textureMb
+
+values :: Dmap.Map k v -> [v]
+values = map snd . Dmap.toList
+
