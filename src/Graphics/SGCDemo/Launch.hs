@@ -765,7 +765,7 @@ faceSpec args rands = do
     let faceSpecWolf    = [ (twolf, gwolf), (t1, g1), (t1, g1), (t1, g1)
                           , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
-    let faceSpecViking    = [ (tviking, gviking), (t1, g1), (t1, g1), (t1, g1)
+    let faceSpecViking    = [ (tviking, gviking), (tviking, gviking), (tviking, gviking), (tviking, gviking)
                             , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
     let arg  | args == [] = ""
@@ -838,9 +838,23 @@ launch_ (androidLog, androidWarn, androidError) args = do
     -- debug' $ "image: " ++ (show . BS.take 30 $ imageBase64) ++ "..."
 
     rands <- randoms
-    (wolfSeq, wolfTextureMap) <- initWolf textureConfigYaml
+    -- (wolfSeq, wolfTextureMap) <- do
+    (wolfSpec', wolfSeqMb') <-
+        if doWolf then do putStrLn "Please wait . . . (parsing obj files, will take a while)"
+                          (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml
+                          let Cmog.Sequence wolfSeqFrames' = wolfSeq'
+                          debug' "writing to /dev/null"
+                              -- android?? XXX
+                          writeFile "/dev/null" $ show wolfSeqFrames'
+--                           let fold' acc frame' = acc + n' where
+--                                   Cmog.SequenceFrame bursts' = frame'
+--                                   n' = length bursts'
+--                           writeFile "/dev/null" . printf "%d" $ foldl' fold' 0 wolfSeqFrames'
+                          debug' "done writing to /dev/null"
+                          spec' <- wolfSpec wolfTextureMap'
+                          pure (spec', Just wolfSeq')
+                  else pure ([], Nothing)
     faceSpec' <- faceSpec args rands
-    wolfSpec' <- wolfSpec wolfTextureMap
 
     let numWolfTextures = length wolfSpec'
         numCubeTextures = length faceSpec'
@@ -881,11 +895,11 @@ launch_ (androidLog, androidWarn, androidError) args = do
                    & (appReplaceProj =<< initProjection app)
 
     debug' "starting loop"
-    do  let Cmog.Sequence frames = wolfSeq
-        info' $ printf "wolf seq length %d" (length frames)
-    appLoop window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence wolfSeq) (NotFlipping FlipUpper) 0 rands args
+--     do  let Cmog.Sequence frames = wolfSeq
+--         info' $ printf "wolf seq length %d" (length frames)
+    appLoop window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
 
-appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeq flipper t rands args = do
+appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
     let log = appLog app
         info' = info log
         debug' = debug log
@@ -949,13 +963,15 @@ appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeq flipper t rands ar
         checkVertexHit _app click
     when doCylinder    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
     when doTorus       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
-    when doWolf        $ drawWolf app'' wolfSeq textureShader texMapsWolf' flipper t args
+    when doWolf        $ do
+        let wolfSeq = fromJust wolfSeqMb
+        drawWolf app'' wolfSeq textureShader texMapsWolf' flipper t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
     let reloop = do let flipper' = updateFlipper flipper hit
                     threadDelayMs frameInterval
-                    appLoop window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence wolfSeq) flipper' (t + 1) (tail rands) args
+                    appLoop window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence <$> wolfSeqMb) flipper' (t + 1) (tail rands) args
                     -- appLoop window app'' shaders (texMapsCube', texMapsWolf') wolfSeq flipper' (t + 1) (tail rands) args
 
     if qPressed then pure () else reloop
@@ -1811,8 +1827,6 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
         -- for this demo, just the first n bursts (enough to paint something
         -- wolf-like)
         draw' = drawWolfBurst log appmatrix textureShader
-
-    when (flIsFlipping') . putStrLn $ printf "angle: %s" (show flAngleDeg')
 
     useShader log prog
     uniform log "model" um =<< toMGC model
