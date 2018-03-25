@@ -148,6 +148,7 @@ import           Control.Monad.IO.Class ( liftIO )
 import           Control.Concurrent ( threadDelay )
 import           Data.Map as Dmap ( Map
                                   , toList )
+import           Control.DeepSeq ( deepseq )
 import qualified Data.Vector          as DV  ( Vector
                                              , toList
                                              , fromList )
@@ -443,6 +444,10 @@ import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
 import           Graphics.SGCDemo.ImageData ( imageNefeli
                                             , imageNeske
                                             , imageViking
+                                            , imagePlaza1
+                                            , imagePlaza2
+                                            , imagePlaza3
+                                            , imagePlaza4
                                             , imageWolf
                                             , movieMock )
 
@@ -496,8 +501,6 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , useShader
                                          , getShadersFilesystem
                                          , attrib )
-
--- import           Graphics.SGCDemo.Wolf ( wolf )
 
 import           Graphics.SGCDemo.Util ( checkSDLError
                                        , hsvCycle
@@ -705,6 +708,10 @@ faceSpec args rands = do
         g6 = GraphicsSingleCairo Nothing (bubbleFrames rands 0)
         gwolf = GraphicsSingle (decodeImage' imageWolf) True
         gviking = GraphicsSingle (decodeImage' imageViking) True
+        gplaza1 = GraphicsSingle (decodeImage' imagePlaza1) True
+        gplaza2 = GraphicsSingle (decodeImage' imagePlaza2) True
+        gplaza3 = GraphicsSingle (decodeImage' imagePlaza3) True
+        gplaza4 = GraphicsSingle (decodeImage' imagePlaza4) True
 
         -- tn = NoTexture
 
@@ -716,6 +723,7 @@ faceSpec args rands = do
     t6 <- withCairo 512 512
     twolf <- noCairo 512 512
     tviking <- noCairo 256 256
+    tplaza <- noCairo 256 256
 
     -- outer / inner
     let faceSpecExtreme = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
@@ -766,7 +774,7 @@ faceSpec args rands = do
                           , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
     let faceSpecViking    = [ (tviking, gviking), (tviking, gviking), (tviking, gviking), (tviking, gviking)
-                            , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
+                            , (tplaza, gplaza1), (tplaza, gplaza2), (tplaza, gplaza3), (tplaza, gplaza4) ]
 
     let arg  | args == [] = ""
              | otherwise = head args
@@ -843,15 +851,9 @@ launch_ (androidLog, androidWarn, androidError) args = do
         if doWolf then do putStrLn "Please wait . . . (parsing obj files, will take a while)"
                           (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml
                           let Cmog.Sequence wolfSeqFrames' = wolfSeq'
-                          debug' "writing to /dev/null"
-                              -- android?? XXX
-                          writeFile "/dev/null" $ show wolfSeqFrames'
---                           let fold' acc frame' = acc + n' where
---                                   Cmog.SequenceFrame bursts' = frame'
---                                   n' = length bursts'
---                           writeFile "/dev/null" . printf "%d" $ foldl' fold' 0 wolfSeqFrames'
-                          debug' "done writing to /dev/null"
-                          spec' <- wolfSpec wolfTextureMap'
+                          debug' "forcing"
+                          spec' <- deepseq wolfSeq' $ wolfSpec wolfTextureMap'
+                          debug' "done forcing"
                           pure (spec', Just wolfSeq')
                   else pure ([], Nothing)
     faceSpec' <- faceSpec args rands
@@ -1768,11 +1770,15 @@ textures:
     width: 256
     height: 256
   - materialName: fur
-    image: fur.png.base64
-    width: 256
-    height: 256
+    #image: fur.png.base64
+    #width: 256
+    #height: 256
+    image: body.png.base64
+    width: 4096
+    height: 2048
 |]
 
+initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
         textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
@@ -1817,6 +1823,9 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
         appmatrix = appMatrix _app
         prog         = shaderProgram textureShader
         (um, uv, up) = shaderMatrix textureShader
+        extraT     = shaderExtra textureShader
+        (_:doVaryOpacityUniform':_) = fst . fromJust $ extraT
+        udvot = doVaryOpacityUniform'
         (model, view, proj) = map3 stackPop' appmatrix
 
         Cmog.Sequence frames' = wolfSeq
@@ -1832,6 +1841,7 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
     uniform log "model" um =<< toMGC model
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
+    uniform log "udvot" udvot glFalseF
 
     -- texture indices hardcoded for this demo.
     mapM_ (draw' $ Just 9)  . take 4          $ bursts'

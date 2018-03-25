@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -eu
+set -o pipefail
+
+bindir=$(realpath "$(dirname "$0")")
+
+. "$bindir"/functions.bash
+
+USAGE="Usage: $0"
+
+file="$1"
+cmd mv "$file" "$file".old
+cmd convert "$file".old -resize 256x256 "$file"
