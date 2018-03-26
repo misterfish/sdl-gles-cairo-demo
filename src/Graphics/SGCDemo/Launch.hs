@@ -423,8 +423,9 @@ import           Graphics.DemoCat.Render.Render     as SCC ( renderFrames )
 
 -- mesh-obj-gles
 import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
-                                                 , ConfigObjectSpec (ConfigObjectFilenames)
-                                                 , ConfigMtlSpec (ConfigMtlFilePath)
+                                                 , ConfigObjectSpec (ConfigObjectSpec)
+                                                 , ConfigObjectSpecItem (ConfigObjectFilePath, ConfigObjectSource)
+                                                 , ConfigMtlSpec (ConfigMtlFilePath, ConfigMtlSource)
                                                  , TextureConfig (TextureConfig)
                                                  , Sequence (Sequence)
                                                  , SequenceFrame (SequenceFrame)
@@ -585,6 +586,7 @@ import           Graphics.SGCDemo.CubeFaces ( drawCubeFaces )
 
 import           Graphics.SGCDemo.Wolf ( bodyPng64
                                        , furPng64
+                                       , wolfMtl
                                        , eyesPng64 )
 
 import           Graphics.SGCDemo.Types ( App (App)
@@ -1788,37 +1790,36 @@ textureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
 textureConfigYaml bodyPng eyesPng furPng = pure $
     "textures:\n" <>
     "  - materialName: Material\n" <>
-    "    #imageBase64: body.png.base64\n" <>
     "    imageBase64: " <> bodyPng <> "\n" <>
     "    width: 4096\n" <>
     "    height: 2048\n" <>
     "  - materialName: eyes\n" <>
-    "    #image: eyes-2.png.base64\n" <>
     "    imageBase64: " <> eyesPng <> "\n" <>
     "    width: 256\n" <>
     "    height: 256\n" <>
     "  - materialName: fur\n" <>
-    "    #image: fur.png.base64\n" <>
-    "    #width: 256\n" <>
-    "    #height: 256\n" <>
-    "    #image: body.png.base64\n" <>
+
+    "    # image: fur.png.base64\n" <>
+    "    # width: 256\n" <>
+    "    # height: 256\n" <>
+    "    # image: body.png.base64\n" <>
+
     "    imageBase64: " <> bodyPng <> "\n" <>
     "    width: 4096\n" <>
     "    height: 2048\n"
 
-textureDir = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures"
-
 initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
-        textureDir' = textureDir
-        mtlFilename' = framesDir' <> "/wolf_000100.mtl"
+        -- mtlFilename' = framesDir' <> "/wolf_000100.mtl"
+        mtlSrc' = wolfMtl
         objFilenameGlob = "wolf*.obj"
 
     objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
     let wolfConfig = Cmog.Config
-            (Cmog.ConfigObjectFilenames objFilenames')
-            (Cmog.ConfigMtlFilePath mtlFilename')
+            (Cmog.ConfigObjectSpec $ map Cmog.ConfigObjectFilePath objFilenames')
+            -- (Cmog.ConfigMtlFilePath mtlFilename')
+            (Cmog.ConfigMtlSource mtlSrc')
             configYaml
 
     Cmog.parse wolfConfig
