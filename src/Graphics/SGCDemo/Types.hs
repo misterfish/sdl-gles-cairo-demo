@@ -11,7 +11,7 @@ module Graphics.SGCDemo.Types
     , GMat
     , GMatD
     , Color
-    , Shader (ShaderC, ShaderT)
+    , Shader (ShaderC, ShaderT, ShaderM)
     , Shader' (Shader')
     , ShaderD (ShaderDC, ShaderDT)
     , Tex (NoTexture)
@@ -23,7 +23,7 @@ module Graphics.SGCDemo.Types
     , DrawInfo (DrawVertex, DrawColor, DrawTexCoord, DrawNormal)
     , MVPConfig (MVPConfig)
     , ProjectionType (ProjectionFrustum, ProjectionOrtho)
-    , VertexData (VertexDataC, VertexDataT)
+    , VertexData (VertexDataC, VertexDataT, VertexDataM)
     , drawInfoAttribLocation
     , drawInfoVertexCoords
     , drawInfoColorCoords
@@ -194,10 +194,12 @@ data ProjectionType = ProjectionFrustum
 
 data VertexData = VertexDataC AttribLocation AttribLocation AttribLocation
                 | VertexDataT AttribLocation AttribLocation AttribLocation UniformLocation
+                | VertexDataM AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation UniformLocation UniformLocation UniformLocation
                   deriving (Eq, Show)
 
 data Shader = ShaderC Shader'
             | ShaderT Shader'
+            | ShaderM Shader'
               deriving (Eq, Show)
 
 data Shader' = Shader' { shader'Program    :: Program
@@ -213,6 +215,7 @@ data Shader' = Shader' { shader'Program    :: Program
 
 shader' (ShaderC x) = x
 shader' (ShaderT x) = x
+shader' (ShaderM x) = x
 
 shaderProgram    = shader'Program    . shader'
 shaderVertexData = shader'VertexData . shader'

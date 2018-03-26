@@ -1,0 +1,78 @@
+#version 100
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+uniform sampler2D texture;
+uniform float u_ambientStrength;
+uniform float u_specularStrength;
+
+varying vec4 v_position;
+varying vec2 v_texcoord;
+varying vec4 v_normal;
+
+varying float v_specularExp;
+varying vec4 v_ambientColor;
+varying vec4 v_diffuseColor;
+varying vec4 v_specularColor;
+
+vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);
+
+struct light {
+    float ambientStrength;
+    float specularStrength;
+    float specularExp;
+    vec4 ambientColor;
+    vec4 diffuseColor;
+    vec4 specularColor;
+    vec4 lightPos;
+};
+
+light l0 = light (
+    u_ambientStrength,
+    u_specularStrength,
+    v_specularExp,
+    v_ambientColor,
+    v_diffuseColor,
+    v_specularColor,
+    vec4 (-10.0, -2.0, 3.0, 1.0)
+);
+
+vec4 get_lighting (vec4 viewDir, vec4 norm, int i)
+{
+    light l = i == 0 ? l0 : l1;
+    vec4 lightDir = normalize (l.lightPos - v_position);
+    float lightProj = dot (norm, lightDir);
+
+    // xxx
+    lightProj = abs (lightProj);
+
+    vec4 ambient = l.ambientStrength * l.ambientColor;
+
+    vec4 diffuse = max (lightProj, 0.0) * l.diffuseColor;
+    diffuse.w = l.diffuseColor.w;
+
+    vec4 reflectDir = reflect (-lightDir, norm);
+    float reflectProj = dot (viewDir, reflectDir);
+    float spec = pow (max (reflectProj, 0.0), l.specularExp);
+    vec4 specular = l.specularStrength * l.specularColor * spec;
+
+    return ambient + specular + diffuse;
+}
+
+void main()
+{
+    vec4 init = texture2D(texture, v_texcoord);
+
+    vec4 norm = normalize (v_normal);
+    norm.w = 0.0;
+
+    vec4 viewDir = normalize (viewPos - v_position);
+
+    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);
+    lightTotal += get_lighting (viewDir, norm, 0);
+
+    gl_FragColor = init * lightTotal;
+
+    gl_FragColor.w = 1.0;
+}

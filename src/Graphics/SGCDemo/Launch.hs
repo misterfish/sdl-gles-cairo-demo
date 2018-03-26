@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
-{-# LANGUAGE QuasiQuotes #-}
+--{-# LANGUAGE QuasiQuotes #-}
 
 -- | notes:
 --
@@ -166,8 +166,10 @@ import qualified Data.ByteString.Base64 as B64 ( decode )
 import           Data.Stack ( Stack, stackNew, stackPush, stackPop )
 import           Control.Conditional ( ifM )
 
+-- Doesn't compile on Android.
 import           System.FilePath.Glob as Sfg ( globDir1 )
 import qualified System.FilePath.Glob as Sfg ( compile )
+
 import "matrix"  Data.Matrix        as DMX ( (!)
                                            , Matrix
                                            , fromList
@@ -421,6 +423,8 @@ import           Graphics.DemoCat.Render.Render     as SCC ( renderFrames )
 
 -- mesh-obj-gles
 import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
+                                                 , ConfigObjectSpec (ConfigObjectFilenames)
+                                                 , ConfigMtlSpec (ConfigMtlFilePath)
                                                  , TextureConfig (TextureConfig)
                                                  , Sequence (Sequence)
                                                  , SequenceFrame (SequenceFrame)
@@ -435,6 +439,10 @@ import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
                                                  , Vertex2 (Vertex2)
                                                  , Vertex3 (Vertex3)
                                                  , materialTexture
+                                                 , materialSpecularExp
+                                                 , materialAmbientColor
+                                                 , materialDiffuseColor
+                                                 , materialSpecularColor
                                                  , makeInfiniteSequence
                                                  , tailSequence
                                                  , tcImageBase64
@@ -497,7 +505,7 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , activateTexture
                                          , getShadersInline
                                          , initShaderColor
-                                         , initShaderTexture
+                                         , initShaderTextureFaces
                                          , useShaderM
                                          , useShader
                                          , getShadersFilesystem
@@ -574,6 +582,10 @@ import           Graphics.SGCDemo.Config ( doDebug
                                          , output565 )
 
 import           Graphics.SGCDemo.CubeFaces ( drawCubeFaces )
+
+import           Graphics.SGCDemo.Wolf ( bodyPng64
+                                       , furPng64
+                                       , eyesPng64 )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
@@ -854,7 +866,8 @@ launch_ (androidLog, androidWarn, androidError) args = do
     rands <- randoms
     (wolfSpec', wolfSeqMb') <-
         if doWolf then do info' "Please wait . . . (parsing obj files, will take a while)"
-                          (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml
+                          textureConfigYaml' <- textureConfigYaml bodyPng64 eyesPng64 furPng64
+                          (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml'
                           let Cmog.Sequence wolfSeqFrames' = wolfSeq'
                           debug' "forcing"
                           spec' <- deepseq wolfSeq' $ wolfSpec wolfTextureMap'
@@ -870,7 +883,8 @@ launch_ (androidLog, androidWarn, androidError) args = do
     let (texNamesCube, texNamesWolf) = splitAt numCubeTextures texNames
 
     debug' "initShaders"
-    (colorShader, textureShader) <- initShaders log
+    -- (colorShader, texFacesShader, meshShader) <- initShaders log
+    (colorShader, texFacesShader) <- initShaders log
 
     let toGraphTextMapping' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
         texMapsCube :: [GraphicsTextureMapping]
@@ -905,7 +919,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     debug' "starting loop"
 --     do  let Cmog.Sequence frames = wolfSeq
 --         info' $ printf "wolf seq length %d" (length frames)
-    appLoop config window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
+    appLoop config window app' (colorShader, texFacesShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
 
 appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
     let log = appLog app
@@ -943,7 +957,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     wrapGL log "clear" $ do GL.clear [ ColorBuffer, DepthBuffer ]
 
-    let ( colorShader, textureShader ) = shaders
+    let ( colorShader, texFacesShader ) = shaders
         doBackground = config & configDoBackground
 
     when doBackground $ do
@@ -965,15 +979,15 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     when (config & configDoShadersTest) $ testShaders log colorShader args
     when (config & configDoLinesTest)   $ testLineStroke app'' colorShader args
-    when (config & configDoCarrousel) $ coneSectionTest app'' (colorShader, textureShader) texMapsCube' t args
+    when (config & configDoCarrousel) $ coneSectionTest app'' (colorShader, texFacesShader) texMapsCube' t args
     hit <- ifNotFalseM (config & configDoCube) $ do
-        _app <- cube app'' (colorShader, textureShader) texMapsCube' t flipper args
+        _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
-    when (config & configDoCylinder)    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
-    when (config & configDoTorus)       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
+    when (config & configDoCylinder)    $ cylinderTest app'' (colorShader, texFacesShader) texMapsCube' 1 t args
+    when (config & configDoTorus)       $ torusTest app'' (colorShader, texFacesShader) texMapsCube' t args
     when (config & configDoWolf) $ do
         let wolfSeq = fromJust wolfSeqMb
-        drawWolf app'' wolfSeq textureShader texMapsWolf' flipper t args
+        drawWolf app'' wolfSeq texFacesShader texMapsWolf' flipper t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
@@ -1544,18 +1558,23 @@ initShaders log = do
     let getShaders | isEmbedded == True = pure getShadersInline
                    | otherwise = getShadersFilesystem
 
-    ( vShaderColor, fShaderColor, vShaderTexture, fShaderTexture ) <- getShaders
+    (   vShaderColor, fShaderColor
+      , vShaderTextureFaces, fShaderTextureFaces
+      , vShaderMesh, fShaderMesh ) <- getShaders
 
     let colorShader   = initShaderColor log vShaderColor fShaderColor mvp1 v1 Nothing
         mvp1 = ("model", "view", "projection")
         v1 = ("a_position", "a_color", "a_normal")
 
-        textureShader = initShaderTexture log vShaderTexture fShaderTexture mvp2 v2 extra2
+        texFacesShader = initShaderTextureFaces log vShaderTextureFaces fShaderTextureFaces mvp2 v2 extra2
         mvp2 = ("model", "view", "projection")
         v2 = ("a_position", "a_texcoord", "a_normal", "texture")
         extra2 = Just (["transpose_inverse_model", "do_vary_opacity"], [])
 
-    (,) <$> colorShader <*> textureShader
+        meshShader = undefined
+
+    -- (,,) <$> colorShader <*> texFacesShader <*> meshShader
+    (,) <$> colorShader <*> texFacesShader
 
 testShaders log shader args = do
     let prog         = shaderProgram shader
@@ -1763,39 +1782,48 @@ getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
 -- Kd: diffuse texture map
 -- Ka: alpha texture map
 -- Ke: emissive texture map
-textureConfigYaml :: ByteString
-textureConfigYaml = [QQ.r|
-textures:
-  - materialName: Material
-    image: body.png.base64
-    width: 4096
-    height: 2048
-  - materialName: eyes
-    image: eyes-2.png.base64
-    width: 256
-    height: 256
-  - materialName: fur
-    #image: fur.png.base64
-    #width: 256
-    #height: 256
-    image: body.png.base64
-    width: 4096
-    height: 2048
-|]
+-- • quasiquotes don't seem to work in the cross-compiler (needs external
+-- interpreter), but why did it work in the Mesh module?)
+textureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
+textureConfigYaml bodyPng eyesPng furPng = pure $
+    "textures:\n" <>
+    "  - materialName: Material\n" <>
+    "    #imageBase64: body.png.base64\n" <>
+    "    imageBase64: " <> bodyPng <> "\n" <>
+    "    width: 4096\n" <>
+    "    height: 2048\n" <>
+    "  - materialName: eyes\n" <>
+    "    #image: eyes-2.png.base64\n" <>
+    "    imageBase64: " <> eyesPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: fur\n" <>
+    "    #image: fur.png.base64\n" <>
+    "    #width: 256\n" <>
+    "    #height: 256\n" <>
+    "    #image: body.png.base64\n" <>
+    "    imageBase64: " <> bodyPng <> "\n" <>
+    "    width: 4096\n" <>
+    "    height: 2048\n"
+
+textureDir = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures"
 
 initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
-        textureDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/textures/"
+        textureDir' = textureDir
         mtlFilename' = framesDir' <> "/wolf_000100.mtl"
         objFilenameGlob = "wolf*.obj"
 
     objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
-    let wolfConfig = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml
+    let wolfConfig = Cmog.Config
+            (Cmog.ConfigObjectFilenames objFilenames')
+            (Cmog.ConfigMtlFilePath mtlFilename')
+            configYaml
 
     Cmog.parse wolfConfig
 
-drawWolf app wolfSeq textureShader texMaps flipper t args = do
+drawWolf app wolfSeq texFacesShader texMaps flipper t args = do
     let _app = app & appMultiplyModel model'
         log = appLog app
         flIsFlipping'
@@ -1826,9 +1854,9 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
                               , translateX $ inv 0.25
                               , translateZ 0.275 ]
         appmatrix = appMatrix _app
-        prog         = shaderProgram textureShader
-        (um, uv, up) = shaderMatrix textureShader
-        extraT     = shaderExtra textureShader
+        prog         = shaderProgram texFacesShader
+        (um, uv, up) = shaderMatrix texFacesShader
+        extraT     = shaderExtra texFacesShader
         (_:doVaryOpacityUniform':_) = fst . fromJust $ extraT
         udvot = doVaryOpacityUniform'
         (model, view, proj) = map3 stackPop' appmatrix
@@ -1838,9 +1866,7 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
         frame' = head frames'
         Cmog.SequenceFrame bursts' = frame'
 
-        -- for this demo, just the first n bursts (enough to paint something
-        -- wolf-like)
-        draw' = drawWolfBurst log appmatrix textureShader
+        draw' = drawWolfBurst log appmatrix texFacesShader
 
     useShader log prog
     uniform log "model" um =<< toMGC model
@@ -1848,16 +1874,23 @@ drawWolf app wolfSeq textureShader texMaps flipper t args = do
     uniform log "proj" up =<< toMGC proj
     uniform log "udvot" udvot glFalseF
 
-    -- texture indices hardcoded for this demo.
+    -- for this demo, just the first n bursts (enough to paint something
+    -- wolf-like).
+    -- also, texture indices are hardcoded.
     mapM_ (draw' $ Just 9)  . take 4          $ bursts'
     mapM_ (draw' $ Just 11) . take 1 . drop 4 $ bursts'
 
 -- textureIdx is a kludge -- should figure out dynamically. xxx
-drawWolfBurst log appmatrix textureShader textureIdxMb burst = do
-    let VertexDataT vp vt vn utt = shaderVertexData textureShader
+drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
+    let VertexDataT vp vt vn utt = shaderVertexData texFacesShader
 
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
+
         textureMb' = Cmog.materialTexture material'
+        specularExp' = Cmog.materialSpecularExp material'
+        ambientColor' = Cmog.materialAmbientColor material'
+        diffuseColor' = Cmog.materialDiffuseColor material'
+        specularColor' = Cmog.materialSpecularColor material'
 
         foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
         foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b) = Vertex4 a b c d

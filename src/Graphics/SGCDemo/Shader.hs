@@ -6,7 +6,7 @@ module Graphics.SGCDemo.Shader ( uniform
                                , getShadersInline
                                , getShadersFilesystem
                                , initShaderColor
-                               , initShaderTexture
+                               , initShaderTextureFaces
                                , activateTexture
                                , useShaderM ) where
 
@@ -57,10 +57,10 @@ import           Graphics.SGCDemo.Util ( wrapGL
 import           Graphics.SGCDemo.Config ( doDebug )
 
 import           Graphics.SGCDemo.Types ( Log ( Log, info, warn, err )
-                                        , Shader ( ShaderC, ShaderT )
+                                        , Shader ( ShaderC, ShaderT, ShaderM )
                                         , Shader' (Shader')
                                         , ShaderD ( ShaderDT, ShaderDC )
-                                        , VertexData (VertexDataC, VertexDataT)
+                                        , VertexData ( VertexDataC, VertexDataT, VertexDataM )
                                         , appLog
                                         , shaderMatrix
                                         , appMatrix )
@@ -129,14 +129,21 @@ initProgram log vShaderSrc fShaderSrc = do
     pure prog
 
 initShaderColor log vShaderSrc fShaderSrc mvp (vp, vc, vn) extra = do
-    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp (vp, vc, vn) Nothing extra
+    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp (vp, vc, vn) [] extra
     pure $ ShaderC shader'
 
-initShaderTexture log vShaderSrc fShaderSrc mvp (vp, vc, vn, utt) extra = do
-    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp (vp, vc, vn) (Just utt) extra
+initShaderTextureFaces log vShaderSrc fShaderSrc mvp (vp, vc, vn, utt) extra = do
+    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp (vp, vc, vn) [utt] extra
     pure $ ShaderT shader'
 
-initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (vp, vc, vn) maybeUtt extra = do
+initShaderMesh log vShaderSrc fShaderSrc mvp (vp, vc, vn, utt) extra = do
+    let uas = undefined
+        uss = undefined
+    shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp (vp, vc, vn) [utt, uas, uss] extra
+    pure $ ShaderM shader'
+
+-- UUU
+initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (vp, vc, vn) utts extra = do
     prog' <- initProgram log vShaderSrc fShaderSrc
     let unif' str  = wrapGL log ("uniformLocation " <> str) . STV.get $ uniformLocation prog' str
         att' str   = wrapGL log ("attribLocation "  <> str) . STV.get $ attribLocation  prog' str
@@ -145,9 +152,20 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (vp, vc, vn) maybe
         extra' Nothing = pure Nothing
         extra' (Just (extraU, extraA)) = Just <$> extra'' (mapM unif' extraU) (mapM att' extraA)
         extra'' u' a' = (,) <$> u' <*> a'
+    let vse = undefined
+        vac = undefined
+        vdc = undefined
+        vsc = undefined
     let vertexDataC' = VertexDataC <$> att' vp <*> att' vc <*> att' vn
-        vertexDataT' = VertexDataT <$> att' vp <*> att' vc <*> att' vn <*> unif' (fromJust maybeUtt)
-        vertexData' = if shaderType == "t" then vertexDataT' else vertexDataC'
+        vertexDataT' = VertexDataT <$> att' vp <*> att' vc <*> att' vn <*> unif' (head utts)
+        vertexDataM' = VertexDataM <$> att' vp <*> att' vc <*> att' vn
+                                   <*> att' vse <*> att' vac <*> att' vdc <*> att' vsc
+                                   <*> unif' ((!! 0) utts)
+                                   <*> unif' ((!! 1) utts)
+                                   <*> unif' ((!! 2) utts)
+        vertexData' = case shaderType of "t" -> vertexDataT'
+                                         "c" -> vertexDataC'
+                                         "m" -> vertexDataM'
     Shader' <$> pure prog' <*> pure mvpMat' <*> vertexData' <*> extra' extra
 
 -- no 'enable' necessary for uniforms.
@@ -174,16 +192,23 @@ getShadersFilesystem = do
     vShaderColor   <- BS8.pack <$> readFile "vertex-color"
     fShaderColor   <- BS8.pack <$> readFile "fragment-color"
 
-    vShaderTexture <- BS8.pack <$> readFile "vertex-texture"
-    fShaderTexture <- BS8.pack <$> readFile "fragment-texture"
+    vShaderTextureFaces <- BS8.pack <$> readFile "vertex-texture-faces"
+    fShaderTextureFaces <- BS8.pack <$> readFile "fragment-texture-faces"
 
-    pure ( vShaderColor, fShaderColor, vShaderTexture, fShaderTexture )
+    vShaderMesh <- BS8.pack <$> readFile "vertex-mesh"
+    fShaderMesh <- BS8.pack <$> readFile "fragment-mesh"
+
+    pure ( vShaderColor, fShaderColor
+         , vShaderTextureFaces, fShaderTextureFaces
+         , vShaderMesh, fShaderMesh )
 
 getShadersInline =
     ( BS8.pack getShaderInlineVertexColor
     , BS8.pack getShaderInlineFragmentColor
-    , BS8.pack getShaderInlineVertexTexture
-    , BS8.pack getShaderInlineFragmentTexture )
+    , BS8.pack getShaderInlineVertexTextureFaces
+    , BS8.pack getShaderInlineFragmentTextureFaces
+    , BS8.pack getShaderInlineVertexMesh
+    , BS8.pack getShaderInlineFragmentMesh )
 
 getShaderInlineVertexColor =
     "#version 100\n" <>
@@ -200,7 +225,7 @@ getShaderInlineVertexColor =
     "}\n" <>
     "\n"
 
-getShaderInlineVertexTexture =
+xxxgetShaderInlineVertexTextureFaces =
     "#version 100\n" <>
     "uniform mat4 model;\n" <>
     "uniform mat4 view;\n" <>
@@ -232,7 +257,39 @@ getShaderInlineFragmentColor =
     "   gl_FragColor = v_color;\n" <>
     "}\n"
 
-getShaderInlineFragmentTexture =
+getShaderInlineVertexTextureFaces =
+    "#version 100\n" <>
+    "// ES 2.0 requires 100 or 300, which are the ES versions.\n" <>
+    "\n" <>
+    "uniform mat4 model;\n" <>
+    "uniform mat4 view;\n" <>
+    "uniform mat4 projection;\n" <>
+    "\n" <>
+    "uniform mat4 transpose_inverse_model;\n" <>
+    "\n" <>
+    "attribute vec4 a_position;\n" <>
+    "attribute vec2 a_texcoord;\n" <>
+    "attribute vec4 a_normal;\n" <>
+    "\n" <>
+    "varying vec4 v_position;\n" <>
+    "varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    gl_Position = projection * view * model * a_position;\n" <>
+    "    v_texcoord = a_texcoord;\n" <>
+    "\n" <>
+    "    // -- eye-space.\n" <>
+    "    v_position = view * model * a_position;\n" <>
+    "\n" <>
+    "    vec4 normal = vec4 (vec3 (a_normal), 0.0);\n" <>
+    "\n" <>
+    "    // v_normal = view * transpose_inverse_model * normal;\n" <>
+    "    v_normal = view * model * normal;\n" <>
+    "}\n"
+
+xxxgetShaderInlineFragmentTextureFaces =
     "#version 100\n" <>
     "#ifdef GL_ES\n" <>
     "precision mediump float;\n" <>
@@ -272,6 +329,235 @@ getShaderInlineFragmentTexture =
     "    float fog = fogCoord * fogDensity;\n" <>
     "    gl_FragColor = mix (fogColor, gl_FragColor, clamp (1.0 - fog, 0.0, 1.0));\n" <>
     "    gl_FragColor.w = finalOpacity;\n" <>
+    "}\n"
+
+getShaderInlineFragmentTextureFaces =
+    "#version 100\n" <>
+    "#ifdef GL_ES\n" <>
+    "precision mediump float;\n" <>
+    "#endif\n" <>
+    "\n" <>
+    "uniform sampler2D texture;\n" <>
+    "// --- 'boolean', but we use a float so we can multiply and avoid an if.\n" <>
+    "uniform float do_vary_opacity;\n" <>
+    "\n" <>
+    "varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_position;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);\n" <>
+    "\n" <>
+    "float fogDensity = 2.5;\n" <>
+    "float fogFactor = 0.5;\n" <>
+    "float fogZFactor = 3.0;\n" <>
+    "vec4 fogColor = vec4 (0.3, 0.3, 0.9, 1.0);\n" <>
+    "\n" <>
+    "// float finalOpacity = 0.9;\n" <>
+    "\n" <>
+    "struct light {\n" <>
+    "    float ambientStrength;\n" <>
+    "    float specularStrength;\n" <>
+    "    float specularExp;\n" <>
+    "    vec4 lightColor;\n" <>
+    "    vec4 lightPos;\n" <>
+    "};\n" <>
+    "\n" <>
+    "light l0 = light (\n" <>
+    "    0.2,\n" <>
+    "    3.0,\n" <>
+    "    32.0,\n" <>
+    "    vec4 (1.0, 0.2, 0.2, 1.0),\n" <>
+    "    vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
+    ");\n" <>
+    "\n" <>
+    "light l1 = light (\n" <>
+    "    0.2,\n" <>
+    "    1.0,\n" <>
+    "    32.0,\n" <>
+    "    vec4 (0.1, 0.7, 0.4, 0.2),\n" <>
+    "    vec4 (20.0, -3.0, -4.0, 1.0)\n" <>
+    ");\n" <>
+    "\n" <>
+    "vec4 get_lighting (vec4 viewDir, vec4 norm, int i)\n" <>
+    "{\n" <>
+    "    light l = i == 0 ? l0 : l1;\n" <>
+    "    vec4 lightDir = normalize (l.lightPos - v_position);\n" <>
+    "    float lightProj = dot (norm, lightDir);\n" <>
+    "\n" <>
+    "    // xxx\n" <>
+    "    lightProj = abs (lightProj);\n" <>
+    "\n" <>
+    "    vec4 ambient = l.ambientStrength * l.lightColor;\n" <>
+    "\n" <>
+    "    vec4 diffuse = max (lightProj, 0.0) * l.lightColor;\n" <>
+    "    diffuse.w = l.lightColor.w;\n" <>
+    "\n" <>
+    "    vec4 reflectDir = reflect (-lightDir, norm);\n" <>
+    "    float reflectProj = dot (viewDir, reflectDir);\n" <>
+    "    float spec = pow (max (reflectProj, 0.0), l.specularExp);\n" <>
+    "    vec4 specular = l.specularStrength * l.lightColor * spec;\n" <>
+    "\n" <>
+    "    return ambient + specular + diffuse;\n" <>
+    "}\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    vec4 init = texture2D(texture, v_texcoord);\n" <>
+    "\n" <>
+    "    vec4 norm = normalize (v_normal);\n" <>
+    "    norm.w = 0.0;\n" <>
+    "\n" <>
+    "    vec4 viewDir = normalize (viewPos - v_position);\n" <>
+    "\n" <>
+    "    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);\n" <>
+    "    lightTotal += get_lighting (viewDir, norm, 0);\n" <>
+    "    lightTotal += get_lighting (viewDir, norm, 1);\n" <>
+    "\n" <>
+    "    gl_FragColor = init * lightTotal;\n" <>
+    "\n" <>
+    "    float fragZ = gl_FragCoord.z / gl_FragCoord.w;\n" <>
+    "\n" <>
+    "    float fogCoord = pow ((fragZ / fogZFactor), 8.0) * fogFactor;\n" <>
+    "\n" <>
+    "    float fog = fogCoord * fogDensity;\n" <>
+    "    gl_FragColor = mix (fogColor, gl_FragColor, clamp (1.0 - fog, 0.0, 1.0));\n" <>
+    "\n" <>
+    "    // --- positive z = into the screen.\n" <>
+    "    // --- z greater than thres: opacity = 1.0\n" <>
+    "    // --- z is between 0 and thres: opacity drops off sharply\n" <>
+    "    // --- z is less than 0: don't care\n" <>
+    "    // --- gnuplot> plot [x=0:1] [0:1] log(x/50) + 5\n" <>
+    "    // --- the x - (x - n) stuff is so we can switch on do_vary_opacity without an if.\n" <>
+    "\n" <>
+    "    float x = 0.8;\n" <>
+    "    gl_FragColor.w = x - do_vary_opacity * (x - (log (fragZ / 50.0) + 5.0));\n" <>
+    "}\n"
+
+getShaderInlineVertexMesh =
+    "#version 100\n" <>
+    "// ES 2.0 requires 100 or 300, which are the ES versions.\n" <>
+    "\n" <>
+    "uniform mat4 model;\n" <>
+    "uniform mat4 view;\n" <>
+    "uniform mat4 projection;\n" <>
+    "\n" <>
+    "uniform mat4 transpose_inverse_model;\n" <>
+    "\n" <>
+    "attribute vec4 a_position;\n" <>
+    "attribute vec2 a_texcoord;\n" <>
+    "attribute vec4 a_normal;\n" <>
+    "\n" <>
+    "attribute float a_specularExp;\n" <>
+    "attribute vec4 a_ambientColor;\n" <>
+    "attribute vec4 a_diffuseColor;\n" <>
+    "attribute vec4 a_specularColor;\n" <>
+    "\n" <>
+    "varying vec4 v_position;\n" <>
+    "varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "varying float v_specularExp;\n" <>
+    "varying vec4 v_ambientColor;\n" <>
+    "varying vec4 v_diffuseColor;\n" <>
+    "varying vec4 v_specularColor;\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    gl_Position = projection * view * model * a_position;\n" <>
+    "    v_texcoord = a_texcoord;\n" <>
+    "\n" <>
+    "    // -- eye-space.\n" <>
+    "    v_position = view * model * a_position;\n" <>
+    "\n" <>
+    "    vec4 normal = vec4 (vec3 (a_normal), 0.0);\n" <>
+    "\n" <>
+    "    // v_normal = view * transpose_inverse_model * normal;\n" <>
+    "    v_normal = view * model * normal;\n" <>
+    "\n" <>
+    "    v_specularExp = a_specularExp;\n" <>
+    "    v_ambientColor = a_ambientColor;\n" <>
+    "    v_diffuseColor = a_diffuseColor;\n" <>
+    "    v_specularColor = a_specularColor;\n" <>
+    "}\n"
+
+getShaderInlineFragmentMesh =
+    "#version 100\n" <>
+    "#ifdef GL_ES\n" <>
+    "precision mediump float;\n" <>
+    "#endif\n" <>
+    "\n" <>
+    "uniform sampler2D texture;\n" <>
+    "uniform float u_ambientStrength;\n" <>
+    "uniform float u_specularStrength;\n" <>
+    "\n" <>
+    "varying vec4 v_position;\n" <>
+    "varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "varying float v_specularExp;\n" <>
+    "varying vec4 v_ambientColor;\n" <>
+    "varying vec4 v_diffuseColor;\n" <>
+    "varying vec4 v_specularColor;\n" <>
+    "\n" <>
+    "vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);\n" <>
+    "\n" <>
+    "struct light {\n" <>
+    "    float ambientStrength;\n" <>
+    "    float specularStrength;\n" <>
+    "    float specularExp;\n" <>
+    "    vec4 ambientColor;\n" <>
+    "    vec4 diffuseColor;\n" <>
+    "    vec4 specularColor;\n" <>
+    "    vec4 lightPos;\n" <>
+    "};\n" <>
+    "\n" <>
+    "light l0 = light (\n" <>
+    "    u_ambientStrength,\n" <>
+    "    u_specularStrength,\n" <>
+    "    v_specularExp,\n" <>
+    "    v_ambientColor,\n" <>
+    "    v_diffuseColor,\n" <>
+    "    v_specularColor,\n" <>
+    "    vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
+    ");\n" <>
+    "\n" <>
+    "vec4 get_lighting (vec4 viewDir, vec4 norm, int i)\n" <>
+    "{\n" <>
+    "    light l = i == 0 ? l0 : l1;\n" <>
+    "    vec4 lightDir = normalize (l.lightPos - v_position);\n" <>
+    "    float lightProj = dot (norm, lightDir);\n" <>
+    "\n" <>
+    "    // xxx\n" <>
+    "    lightProj = abs (lightProj);\n" <>
+    "\n" <>
+    "    vec4 ambient = l.ambientStrength * l.ambientColor;\n" <>
+    "\n" <>
+    "    vec4 diffuse = max (lightProj, 0.0) * l.diffuseColor;\n" <>
+    "    diffuse.w = l.diffuseColor.w;\n" <>
+    "\n" <>
+    "    vec4 reflectDir = reflect (-lightDir, norm);\n" <>
+    "    float reflectProj = dot (viewDir, reflectDir);\n" <>
+    "    float spec = pow (max (reflectProj, 0.0), l.specularExp);\n" <>
+    "    vec4 specular = l.specularStrength * l.specularColor * spec;\n" <>
+    "\n" <>
+    "    return ambient + specular + diffuse;\n" <>
+    "}\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    vec4 init = texture2D(texture, v_texcoord);\n" <>
+    "\n" <>
+    "    vec4 norm = normalize (v_normal);\n" <>
+    "    norm.w = 0.0;\n" <>
+    "\n" <>
+    "    vec4 viewDir = normalize (viewPos - v_position);\n" <>
+    "\n" <>
+    "    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);\n" <>
+    "    lightTotal += get_lighting (viewDir, norm, 0);\n" <>
+    "\n" <>
+    "    gl_FragColor = init * lightTotal;\n" <>
+    "\n" <>
+    "    gl_FragColor.w = 1.0;\n" <>
     "}\n"
 
 debug | doDebug   = info
