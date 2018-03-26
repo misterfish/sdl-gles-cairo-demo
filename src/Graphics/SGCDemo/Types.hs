@@ -1,9 +1,11 @@
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Graphics.SGCDemo.Types
     ( App (App)
     , Logger
     , Log (Log, info, warn, err)
+    , Config
     , Bubble (Bubble)
     , DMat
     , GMat
@@ -100,11 +102,29 @@ module Graphics.SGCDemo.Types
     , mvpConfigTranslateZ
     , mvpConfigCubeScale
     , isFlipping
+    , configDoWolf
+    , configDoInitRotate
+    , configDoBorders
+    , configDoCube
+    , configDoCylinder
+    , configDoCarrousel
+    , configDoTorus
+    , configDoBackground
+    , configDoTransformTest
+    , configDoLinesTest
+    , configDoShadersTest
     ) where
 
 import           Text.Printf ( printf )
 import           Data.Word (Word8)
 import           Foreign.C.Types ( CUChar, CUShort, CInt )
+
+import           Data.Yaml as Y ( (.:)
+                                , FromJSON
+                                , parseJSON
+                                )
+import qualified Data.Yaml as Y ( Value (Object)
+                                , Parser )
 
 import           Codec.Picture      as JP ( DynamicImage )
 import qualified Graphics.Rendering.Cairo as C
@@ -392,3 +412,29 @@ data Bubble = Bubble { bubbleXVelocity :: Double
                      , bubbleColor     :: ( Double, Double, Double, Double )
                      , bubbleLineWidth :: Double }
 
+data Config = Config { configDoWolf :: Bool
+                     , configDoInitRotate :: Bool
+                     , configDoBorders :: Bool
+                     , configDoCube :: Bool
+                     , configDoCylinder :: Bool
+                     , configDoCarrousel :: Bool
+                     , configDoTorus :: Bool
+                     , configDoBackground :: Bool
+                     , configDoTransformTest :: Bool
+                     , configDoLinesTest :: Bool
+                     , configDoShadersTest :: Bool }
+
+instance FromJSON Config where
+    parseJSON (Y.Object v) = Config
+        <$> v .: "doWolf"
+        <*> v .: "doInitRotate"
+        <*> v .: "doBorders"
+        <*> v .: "doCube"
+        <*> v .: "doCylinder"
+        <*> v .: "doCarrousel"
+        <*> v .: "doTorus"
+        <*> v .: "doBackground"
+        <*> v .: "doTransformTest"
+        <*> v .: "doLinesTest"
+        <*> v .: "doShadersTest"
+    parseJSON _ = error "invalid type for parseJSON Config"

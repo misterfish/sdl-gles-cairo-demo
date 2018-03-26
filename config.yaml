@@ -1,0 +1,12 @@
+doWolf: true
+doInitRotate: true
+doBorders: true
+doCube: true
+doCylinder: false
+doCarrousel: false
+doTorus: false
+doBackground: false
+doLinesTest: false
+doShadersTest: false
+doTransformTest: false
+

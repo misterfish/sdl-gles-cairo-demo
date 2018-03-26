@@ -35,4 +35,5 @@ mcb     -o ./Main
 mcg
 
 cmd ln -sf "$rootdir"/assets
+cmd ln -sf "$rootdir"/config.yaml
 cmd ./Main "$@"

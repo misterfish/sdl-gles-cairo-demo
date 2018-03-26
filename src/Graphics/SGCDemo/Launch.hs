@@ -117,7 +117,7 @@ import           Data.StateVar      as STV ( makeStateVar )
 import           Data.Word ( Word8 )
 import           Data.ByteString    as BS ( ByteString )
 import qualified Data.ByteString.Char8  as BS8 ( pack )
-import qualified Data.ByteString    as BS ( take )
+import qualified Data.ByteString    as BS ( take, readFile )
 import           System.Environment ( getArgs )
 import           Control.Applicative ( empty )
 import           System.Info   as I           ( os, arch )
@@ -149,6 +149,7 @@ import           Control.Concurrent ( threadDelay )
 import           Data.Map as Dmap ( Map
                                   , toList )
 import           Control.DeepSeq ( deepseq )
+import qualified Data.Yaml as Y ( decode )
 import qualified Data.Vector          as DV  ( Vector
                                              , toList
                                              , fromList )
@@ -575,7 +576,7 @@ import           Graphics.SGCDemo.Config ( doDebug
 import           Graphics.SGCDemo.CubeFaces ( drawCubeFaces )
 
 import           Graphics.SGCDemo.Types ( App (App)
-                                        , Color
+                                        , Config
                                         , Bubble (Bubble)
                                         , Log (Log, info, warn, err)
                                         , Logger
@@ -590,6 +591,17 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , ProjectionType (ProjectionFrustum, ProjectionOrtho)
                                         , VertexData (VertexDataC, VertexDataT)
                                         , appLog
+                                        , configDoWolf
+                                        , configDoInitRotate
+                                        , configDoBorders
+                                        , configDoCube
+                                        , configDoCylinder
+                                        , configDoCarrousel
+                                        , configDoTorus
+                                        , configDoBackground
+                                        , configDoTransformTest
+                                        , configDoLinesTest
+                                        , configDoShadersTest
                                         , texWidth
                                         , texHeight
                                         , isFlipping
@@ -664,19 +676,6 @@ import           Graphics.SGCDemo.Events ( processEvents )
 flipTickToAng x = min 180 . (+ inv 1.5) $ (1.3 ** fromIntegral x)
 numTicksPerFlip = 20
 
-doInitRotate   = True
-doBorders      = True
-doCube         = True
-doCylinder     = False
-doCarrousel    = False
-doTorus        = False
-doWolf         = True
-doBackground   = False
-
-doLinesTest    = False
-doShadersTest  = False
-doFlowerpotTest = False
-
 coneSectionSpinPeriod = 40
 coneSectionSpinFactor = 120
 
@@ -697,12 +696,14 @@ sphereColor = color 0 57 73 255
     if output565 then (newTex8888_565WithCairo, newTex565)
                  else (newTex8888WithCairo, newTex8888NoCairo)
 
-faceSpec args rands = do
+faceSpec log args rands = do
+    info log $ "Please wait . . . (parsing face specs, this will take a while)"
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
     let g1 = GraphicsSingle (decodeImage' imageNefeli) True
         g2 = GraphicsSingle (decodeImage' imageNeske) True
-        g3 = GraphicsMoving (concat . repeat . map decodeImage' $ movieMock) 1 0
+        g3' = map decodeImage' movieMock
+        g3 = GraphicsMoving (g3' `deepseq` (concat . repeat $ g3')) 1 0
         g4 = GraphicsSingleCairo Nothing catFrames
         g5 = GraphicsSingleCairo (Just $ decodeImage' imageNeske) (bubbleFrames rands 0)
         g6 = GraphicsSingleCairo Nothing (bubbleFrames rands 0)
@@ -843,10 +844,14 @@ launch_ (androidLog, androidWarn, androidError) args = do
     checkSDLError' "createWindow"
     debug' "created window"
 
-    -- debug' $ "image: " ++ (show . BS.take 30 $ imageBase64) ++ "..."
+    configYaml <- BS.readFile "config.yaml"
+    let config :: Config
+        config = do  let  error' = error "Couldn't decode config.yaml"
+                     maybe error' id $ Y.decode configYaml
+
+    let doWolf = config & configDoWolf
 
     rands <- randoms
-    -- (wolfSeq, wolfTextureMap) <- do
     (wolfSpec', wolfSeqMb') <-
         if doWolf then do putStrLn "Please wait . . . (parsing obj files, will take a while)"
                           (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml
@@ -856,7 +861,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
                           debug' "done forcing"
                           pure (spec', Just wolfSeq')
                   else pure ([], Nothing)
-    faceSpec' <- faceSpec args rands
+    faceSpec' <- faceSpec log args rands
 
     let numWolfTextures = length wolfSpec'
         numCubeTextures = length faceSpec'
@@ -874,10 +879,11 @@ launch_ (androidLog, androidWarn, androidError) args = do
         texMapsWolf :: [GraphicsTextureMapping]
         texMapsWolf = map toGraphTextMapping' $ zip texNamesWolf wolfSpec'
 
-    info log $ printf "texNamesCube: %s" (show texNamesCube)
-    info log $ printf "texNamesWolf: %s" (show texNamesWolf)
+    debug' $ printf "texNamesCube: %s" (show texNamesCube)
+    debug' $ printf "texNamesWolf: %s" (show texNamesWolf)
 
     let texMaps = (texMapsCube, texMapsWolf)
+        doInitRotate = config & configDoInitRotate
 
         rotations | doInitRotate     = multMatrices [ rotateX 15, rotateY $ inv 15 ]
                   | otherwise        = identityMatrix
@@ -899,9 +905,9 @@ launch_ (androidLog, androidWarn, androidError) args = do
     debug' "starting loop"
 --     do  let Cmog.Sequence frames = wolfSeq
 --         info' $ printf "wolf seq length %d" (length frames)
-    appLoop window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
+    appLoop config window app' (colorShader, textureShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
 
-appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
+appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
     let log = appLog app
         info' = info log
         debug' = debug log
@@ -938,6 +944,7 @@ appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands 
     wrapGL log "clear" $ do GL.clear [ ColorBuffer, DepthBuffer ]
 
     let ( colorShader, textureShader ) = shaders
+        doBackground = config & configDoBackground
 
     when doBackground $ do
         let app'' = app' & appReplaceModel identityMatrix
@@ -952,20 +959,19 @@ appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands 
                     & appMultiplyRightModel rotationsMouse'
                     & appMultiplyModel rotationFlipper'
 
-    when doFlowerpotTest $ do
+    when (config & configDoTransformTest) $ do
         testFlowerPot app'' colorShader      1  45
         testFlowerPot app'' colorShader (inv 1) 20
 
-    when doShadersTest $ testShaders log colorShader args
-    when doLinesTest   $ testLineStroke app'' colorShader args
-    ------ shouldn't these all be texMaps' ?
-    when doCarrousel $ coneSectionTest app'' (colorShader, textureShader) texMapsCube' t args
-    hit <- ifNotFalseM doCube $ do
+    when (config & configDoShadersTest) $ testShaders log colorShader args
+    when (config & configDoLinesTest)   $ testLineStroke app'' colorShader args
+    when (config & configDoCarrousel) $ coneSectionTest app'' (colorShader, textureShader) texMapsCube' t args
+    hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, textureShader) texMapsCube' t flipper args
         checkVertexHit _app click
-    when doCylinder    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
-    when doTorus       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
-    when doWolf        $ do
+    when (config & configDoCylinder)    $ cylinderTest app'' (colorShader, textureShader) texMapsCube' 1 t args
+    when (config & configDoTorus)       $ torusTest app'' (colorShader, textureShader) texMapsCube' t args
+    when (config & configDoWolf) $ do
         let wolfSeq = fromJust wolfSeqMb
         drawWolf app'' wolfSeq textureShader texMapsWolf' flipper t args
 
@@ -973,8 +979,7 @@ appLoop window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands 
 
     let reloop = do let flipper' = updateFlipper flipper hit
                     threadDelayMs frameInterval
-                    appLoop window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence <$> wolfSeqMb) flipper' (t + 1) (tail rands) args
-                    -- appLoop window app'' shaders (texMapsCube', texMapsWolf') wolfSeq flipper' (t + 1) (tail rands) args
+                    appLoop config window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence <$> wolfSeqMb) flipper' (t + 1) (tail rands) args
 
     if qPressed then pure () else reloop
 
@@ -1029,7 +1034,7 @@ initGL log window numTextures args = do
     -- viewport is automatically initialised to pos 0, 0 and size 480 800
     -- ok to call on android too.
     do  vp <- wrapGL log "get viewport" $ STV.get viewport
-        info' $ printf "viewport: %s" (show vp)
+        debug' $ printf "viewport: %s" (show vp)
 
     debug' "testing doubles"
     let a = 0.34    :: Double
@@ -1786,9 +1791,9 @@ initWolf configYaml = do
         objFilenameGlob = "wolf*.obj"
 
     objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
-    let config = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml
+    let wolfConfig = Cmog.Config textureDir' objFilenames' mtlFilename' configYaml
 
-    Cmog.parse config
+    Cmog.parse wolfConfig
 
 drawWolf app wolfSeq textureShader texMaps flipper t args = do
     let _app = app & appMultiplyModel model'
@@ -1896,3 +1901,4 @@ activateTextureMaybe log utt textureIdxMb = do
 values :: Dmap.Map k v -> [v]
 values = map snd . Dmap.toList
 
+fs `asterisk` x = map map' fs where map' f = f x
