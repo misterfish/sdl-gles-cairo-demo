@@ -142,12 +142,14 @@ triangle log (av, ac, an) (c1, c2, c3) (v1, v2, v3) = do
 getptrs app data'= do
     let unvertex3 (Vertex3 x y z)    = (x, y, z)
         unvertex4 (Vertex4 x y z w)  = (x, y, z, w)
+        unvector4 (Vector4 x y z w)  = (x, y, z, w)
         getptr' (DrawVertex av vs)   = pushVertices app av $
             map unvertex3 vs
         getptr' (DrawColor ac cs)    = pushColors app ac cs
         getptr' (DrawTexCoord at ts) = pushTexCoords app at $
             map unvertex4 ts
-        getptr' (DrawNormal an ns)   = pushNormals app an ns
+        getptr' (DrawNormal an ns)   = pushNormals app an $
+            map unvector4 ns
     mapM getptr' data'
 
 notEqual []     = error "notEqual: empty list"
@@ -314,9 +316,9 @@ pushTexCoords log attribLocation tuples = do
     wrapGL log "texCoordAttribPointer vertices" $ vertexAttribPointer attribLocation $= (ToFloat, texCoordArrayDescriptor)
     pure tgt'
 
-pushNormals :: Log -> AttribLocation -> [Vector4 Float] -> IO (Ptr Float)
-pushNormals log attribLocation vectors = do
-    let coords' = concatVectors4 vectors
+pushNormals :: Log -> AttribLocation -> [(Float, Float, Float, Float)] -> IO (Ptr Float)
+pushNormals log attribLocation tuples = do
+    let coords' = concatTuples4 tuples
         numComp' = 4 -- per vertex
         dataType' = GL.Float
         stride' = 0

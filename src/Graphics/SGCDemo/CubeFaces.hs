@@ -304,8 +304,7 @@ drawCubeFaces app shaders dimension flipper t texNames args = do
 
     let c1 = concat . replicate 4 $ texCoords hemi' 0 -- 16 vertices (4 faces)
         c2 = concat . replicate 4 $ texCoords hemi' 1 -- 16 vertices (4 faces)
-        -- n1 = replicateX 32 $ vec3 0 0 1.0
-        n1 = replicateX 32 $ vec4 0 0 1.0 1.0
+        n1 = replicateX 32 $ (0, 0, 1.0, 1.0)
 
     vPtr  <- pushVertices log vp  . concat . replicate 8 $ frontFace -- 32 vertices
     tcPtr <- pushTexCoords log vt $ c1 <> c2 -- 32 vertices

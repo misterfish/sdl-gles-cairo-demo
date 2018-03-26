@@ -853,7 +853,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     rands <- randoms
     (wolfSpec', wolfSeqMb') <-
-        if doWolf then do putStrLn "Please wait . . . (parsing obj files, will take a while)"
+        if doWolf then do info' "Please wait . . . (parsing obj files, will take a while)"
                           (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml
                           let Cmog.Sequence wolfSeqFrames' = wolfSeq'
                           debug' "forcing"
@@ -1860,12 +1860,18 @@ drawWolfBurst log appmatrix textureShader textureIdxMb burst = do
         textureMb' = Cmog.materialTexture material'
 
         foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
-        foreignVertex2ToLocalVertex4 c d(Cmog.Vertex2 a b) = Vertex4 a b c d
+        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b) = Vertex4 a b c d
+        foreignVertex3ToLocalVertex4 d (Cmog.Vertex3 a b c) = Vertex4 a b c d
 
         wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
+
         toTexCoordsMb = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+        toNormalsMb = map (foreignVertex3ToLocalVertex4 1.0) . DV.toList
+
+        wolfTexCoords' :: [Vertex4 Float]
         wolfTexCoords' = maybe none' toTexCoordsMb texCoordsMb'
-        -- normals xxx
+        wolfNormals' :: [Vertex4 Float]
+        wolfNormals' = maybe none' toNormalsMb normalsMb'
 
         none' = []
         len' = length wolfVert'
@@ -1874,7 +1880,7 @@ drawWolfBurst log appmatrix textureShader textureIdxMb burst = do
 
     vPtr <- pushVertices log vp . map unvertex3 $ wolfVert'
     tcPtr <- pushTexCoords log vt . map unvertex4 $ wolfTexCoords'
-    nPtr <- pushNormals log vn . map (const $ vec4 0 0 1.0 1.0 ) $ [ 1 .. len' ]
+    nPtr <- pushNormals log vn . map unvertex4 $ wolfNormals'
     attrib log "vp" vp Enabled
     attrib log "vt" vt Enabled
     attrib log "vn" vn Enabled
