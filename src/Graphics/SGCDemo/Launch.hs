@@ -161,6 +161,9 @@ import           Data.Vector.Storable as DVS ( unsafeWith
                                              , unsafeToForeignPtr0 )
 import qualified Text.RawString.QQ as QQ ( r )
 
+-- tmp
+import qualified Data.Text.IO as DtextIO ( readFile, writeFile )
+
 import qualified Data.ByteString.Base64 as B64 ( decode )
 
 import           Data.Stack ( Stack, stackNew, stackPush, stackPop )
@@ -588,6 +591,8 @@ import           Graphics.SGCDemo.Wolf ( bodyPng64
                                        , furPng64
                                        , wolfMtl
                                        , eyesPng64 )
+
+import           Graphics.SGCDemo.WolfObj ( wolfObj )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
@@ -1810,15 +1815,17 @@ textureConfigYaml bodyPng eyesPng furPng = pure $
 
 initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
-    let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
-        -- mtlFilename' = framesDir' <> "/wolf_000100.mtl"
-        mtlSrc' = wolfMtl
-        objFilenameGlob = "wolf*.obj"
+--     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
+--         objFilenameGlob = "wolf*.obj"
+    let mtlSrc' = wolfMtl
+    -- DtextIO.writeFile "/tmp/allen" . head $ wolfObj
 
-    objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
+    -- objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
+    -- objSources' <- map Cmog.ConfigObjectSource <$> mapM DtextIO.readFile objFilenames'
+    let objSources' = map Cmog.ConfigObjectSource wolfObj
     let wolfConfig = Cmog.Config
-            (Cmog.ConfigObjectSpec $ map Cmog.ConfigObjectFilePath objFilenames')
-            -- (Cmog.ConfigMtlFilePath mtlFilename')
+            -- (Cmog.ConfigObjectSpec $ map Cmog.ConfigObjectFilePath objFilenames')
+            (Cmog.ConfigObjectSpec objSources')
             (Cmog.ConfigMtlSource mtlSrc')
             configYaml
 
