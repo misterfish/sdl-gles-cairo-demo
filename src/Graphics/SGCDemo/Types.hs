@@ -30,6 +30,7 @@ module Graphics.SGCDemo.Types
     , drawInfoColorCoords
     , drawInfoTexCoords
     , drawInfoNormal
+    , appConfig
     , appLog
     , appMatrix
     , appUser1
@@ -103,17 +104,14 @@ module Graphics.SGCDemo.Types
     , mvpConfigTranslateZ
     , mvpConfigCubeScale
     , isFlipping
+    , configFaceSpec
     , configDoWolf
     , configDoInitRotate
-    , configDoBorders
     , configDoCube
-    , configDoCylinder
     , configDoCarrousel
     , configDoTorus
     , configDoBackground
     , configDoTransformTest
-    , configDoLinesTest
-    , configDoShadersTest
     , configDoStars
     , configWolfFrames
     ) where
@@ -176,7 +174,8 @@ data Log = Log { info :: Logger
                , warn :: Logger
                , err :: Logger }
 
-data App = App { appLog :: Log
+data App = App { appConfig :: Config
+               , appLog :: Log
                  -- we store DMX matrices, which are easier to work with,
                  -- multiply etc. they need to be converted to GLmatrix
                  -- using toMGC before sending to shaders.
@@ -419,36 +418,30 @@ data Bubble = Bubble { bubbleXVelocity :: Double
                      , bubbleColor     :: ( Double, Double, Double, Double )
                      , bubbleLineWidth :: Double }
 
-data Config = Config { configDoWolf :: Bool
+data Config = Config { configFaceSpec :: String
+                     , configDoWolf :: Bool
                      , configWolfFrames :: ConfigWolfFrames
                      , configDoInitRotate :: Bool
-                     , configDoBorders :: Bool
                      , configDoCube :: Bool
-                     , configDoCylinder :: Bool
                      , configDoCarrousel :: Bool
                      , configDoStars :: Bool
                      , configDoTorus :: Bool
                      , configDoBackground :: Bool
-                     , configDoTransformTest :: Bool
-                     , configDoLinesTest :: Bool
-                     , configDoShadersTest :: Bool }
+                     , configDoTransformTest :: Bool }
 
 data ConfigWolfFrames = ConfigWolfFramesStr String
                       | ConfigWolfFramesNum Int
 
 instance FromJSON Config where
     parseJSON (Y.Object v) = Config
-        <$> v .: "doWolf"
+        <$> v .: "faceSpec"
+        <*> v .: "doWolf"
         <*> (ConfigWolfFramesStr <$> v .: "wolfFrames" <|> ConfigWolfFramesNum <$> v .: "wolfFrames")
         <*> v .: "doInitRotate"
-        <*> v .: "doBorders"
         <*> v .: "doCube"
-        <*> v .: "doCylinder"
         <*> v .: "doCarrousel"
         <*> v .: "doStars"
         <*> v .: "doTorus"
         <*> v .: "doBackground"
         <*> v .: "doTransformTest"
-        <*> v .: "doLinesTest"
-        <*> v .: "doShadersTest"
     parseJSON _ = error "invalid type for parseJSON Config"

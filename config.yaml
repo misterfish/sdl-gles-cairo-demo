@@ -1,13 +1,13 @@
-doWolf: true
-wolfFrames: 3
+# faceSpec: eightmovies
+# faceSpec: twocats
+faceSpec: extreme
+
+doWolf: false
+wolfFrames: all
 doInitRotate: false
-doBorders: true
 doCube: true
-doCylinder: false
-doCarrousel: true
-doStars: true
+doCarrousel: false
+doStars: false
 doTorus: false
 doBackground: false
-doLinesTest: false
-doShadersTest: false
 doTransformTest: false

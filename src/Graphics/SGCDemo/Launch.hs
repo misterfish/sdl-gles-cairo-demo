@@ -589,18 +589,16 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , GraphicsTextureMapping (GraphicsTextureMapping)
                                         , ProjectionType (ProjectionFrustum, ProjectionOrtho)
                                         , VertexData (VertexDataC, VertexDataT)
+                                        , appConfig
                                         , appLog
+                                        , configFaceSpec
                                         , configDoWolf
                                         , configDoInitRotate
-                                        , configDoBorders
                                         , configDoCube
-                                        , configDoCylinder
                                         , configDoCarrousel
                                         , configDoTorus
                                         , configDoBackground
                                         , configDoTransformTest
-                                        , configDoLinesTest
-                                        , configDoShadersTest
                                         , configDoStars
                                         , configWolfFrames
                                         , texWidth
@@ -697,7 +695,8 @@ sphereColor = color 0 57 73 255
     if output565 then (newTex8888_565WithCairo, newTex565)
                  else (newTex8888WithCairo, newTex8888NoCairo)
 
-faceSpec log args rands = do
+faceSpec log config rands = do
+
     info log $ "Please wait . . . (parsing face specs, this will take a while)"
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
@@ -730,8 +729,8 @@ faceSpec log args rands = do
     tplaza <- noCairo 256 256
 
     -- outer / inner
-    let faceSpecExtreme = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
-                          , (t2, g2), (t3, g3), (t4, g4), (t5, g5) ]
+    let faceSpecExtreme = [ (t4, g4), (t2, g2), (t3, g3), (t1, g1)
+                          , (tviking, gviking), (tplaza, gplaza2), (t4, g4), (t5, g5) ]
 
     let faceSpecSimple1 = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
                           , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
@@ -780,25 +779,24 @@ faceSpec log args rands = do
     let faceSpecViking    = [ (tviking, gviking), (tviking, gviking), (tviking, gviking), (tviking, gviking)
                             , (tplaza, gplaza1), (tplaza, gplaza2), (tplaza, gplaza3), (tplaza, gplaza4) ]
 
-    let arg  | args == [] = ""
-             | otherwise = head args
+    let faceSpec' = config & configFaceSpec
 
-    let spec | arg == "extreme"       =  faceSpecExtreme
-             | arg == "simple1"       =  faceSpecSimple1
-             | arg == "simple2"       =  faceSpecSimple2
-             | arg == "simple3"       =  faceSpecSimple3
-             | arg == "simple4"       =  faceSpecSimple4
-             | arg == "onecat"        =  faceSpecOneCat
-             | arg == "twocats"       =  faceSpecTwoCats
-             | arg == "fourcats"      =  faceSpecFourCats
-             | arg == "eightcats"     =  faceSpecEightCats
-             | arg == "eightbubbles"  =  faceSpecEightBubbles
-             | arg == "onemovie"      =  faceSpecOneMovie
-             | arg == "nomovie"       =  faceSpecNoMovie
-             | arg == "eightmovies"   =  faceSpecEightMovies
-             | arg == "wolf"          =  faceSpecWolf
-             | arg == "viking"        =  faceSpecViking
-             | otherwise              =  faceSpecViking
+    let spec | faceSpec' == "extreme"       =  faceSpecExtreme
+             | faceSpec' == "simple1"       =  faceSpecSimple1
+             | faceSpec' == "simple2"       =  faceSpecSimple2
+             | faceSpec' == "simple3"       =  faceSpecSimple3
+             | faceSpec' == "simple4"       =  faceSpecSimple4
+             | faceSpec' == "onecat"        =  faceSpecOneCat
+             | faceSpec' == "twocats"       =  faceSpecTwoCats
+             | faceSpec' == "fourcats"      =  faceSpecFourCats
+             | faceSpec' == "eightcats"     =  faceSpecEightCats
+             | faceSpec' == "eightbubbles"  =  faceSpecEightBubbles
+             | faceSpec' == "onemovie"      =  faceSpecOneMovie
+             | faceSpec' == "nomovie"       =  faceSpecNoMovie
+             | faceSpec' == "eightmovies"   =  faceSpecEightMovies
+             | faceSpec' == "wolf"          =  faceSpecWolf
+             | faceSpec' == "viking"        =  faceSpecViking
+             | otherwise                    =  error $ printf "Unknown value for faceSpec: %s" faceSpec'
 
     pure spec
 
@@ -872,7 +870,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
                           debug' "done forcing"
                           pure (spec', Just wolfSeq'')
                   else pure ([], Nothing)
-    faceSpec' <- faceSpec log args rands
+    faceSpec' <- faceSpec log config rands
 
     let numWolfTextures = length wolfSpec'
         numCubeTextures = length faceSpec'
@@ -905,7 +903,8 @@ launch_ (androidLog, androidWarn, androidError) args = do
                     & pushView identityMatrix
                     & pushProj identityMatrix
 
-        app = App { appLog = log
+        app = App { appConfig = config
+                  , appLog = log
                   , appMatrix = appmatrix
                   , appUser1 = args
                   , appUser2 = []
@@ -973,19 +972,16 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
                     & appMultiplyModel rotationFlipper'
 
     when (config & configDoTransformTest) $ do
-        testFlowerPot app'' colorShader      1  45
-        testFlowerPot app'' colorShader (inv 1) 20
+        testTransforms app'' colorShader      1  45
+        testTransforms app'' colorShader (inv 1) 20
 
-    when (config & configDoStars) $ drawStars app'' (colorShader, texFacesShader) t args
-    when (config & configDoShadersTest) $ testShaders log colorShader args
-    when (config & configDoLinesTest)   $ testLineStroke app'' colorShader args
-    when (config & configDoCarrousel) $ coneSectionTest app'' (colorShader, texFacesShader) texMapsCube' t args
+    when (config & configDoStars)     $ drawStars app'' (colorShader, texFacesShader) t args
+    when (config & configDoCarrousel) $ carrousel app'' (colorShader, texFacesShader) texMapsCube' t args
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
-    when (config & configDoCylinder)    $ cylinderTest app'' (colorShader, texFacesShader) texMapsCube' 1 t args
-    when (config & configDoTorus)       $ torusTest app'' (colorShader, texFacesShader) texMapsCube' t args
-    when (config & configDoWolf) $ do
+    when (config & configDoTorus)     $ torusTest app'' (colorShader, texFacesShader) texMapsCube' t args
+    when (config & configDoWolf)      $ do
         let wolfSeq = fromJust wolfSeqMb
         drawWolf app'' wolfSeq texFacesShader texMapsWolf' flipper t args
 
@@ -1261,30 +1257,6 @@ isClickHit (vert1X, vert1Y, vert1Z) (targetX, targetY, targetZ) = vertXHit && ve
     vertXHit = vert1X `closeTo` targetX
     vertYHit = vert1Y `closeTo` targetY
     vertZHit = vert1Z `closeTo` targetZ
-
-testLineStroke :: App -> Shader -> [String] -> IO ()
-testLineStroke app shader args
-  | args == ["|"] = pure ()
-  | args == [] = testLineStroke app shader $
-    [ "r", "-1", "-1", "-1", "1", "1", "-1", "|" ]
-  | otherwise = do
-      let log = appLog app
-          ( [col, a, b, c, d, e, f], rest ) = splitAt 7 args
-          thickness = 0.05
-          c' | col == "r" = color  255  0    0    255
-             | col == "g" = color  0    255  0    255
-             | col == "b" = color  0    0    255  255
-             | otherwise  = color  0    255  255  255
-          v1 = verple3 (read a, read b, read c)
-          v2 = verple3 (read d, read e, read f)
-          prog         = shaderProgram shader
-          (um, uv, up) = shaderMatrix shader
-          VertexDataC ap ac an = shaderVertexData shader
-          shader' = ShaderDC (Just prog) um uv up ap ac an
-
-      info log $ printf "col: <%s>" col
-      lineStroke app shader' (c', c') (v1, v2) thickness
-      testLineStroke app shader rest
 
 a `between` (b, c) = a >= l && a <= r where
     (l, r) | b <= c       = (b, c)
@@ -1576,54 +1548,7 @@ initShaders log = do
     -- (,,) <$> colorShader <*> texFacesShader <*> meshShader
     (,) <$> colorShader <*> texFacesShader
 
-testShaders log shader args = do
-    let prog         = shaderProgram shader
-        (um, uv, up) = shaderMatrix shader
-        VertexDataC ap ac an = shaderVertexData shader
-        dim = dimension
-        nx1 = inv dim
-        py1 = dim
-        px1 = dim
-        frontFace' z' = [ ( nx1, 0, z' )
-                        , ( nx1, py1, z' )
-                        , ( px1, py1, z' )
-                        , ( px1, 0, z' ) ]
-
-        z = -3
-        -- each one is a 4-ple => one vertex
-        col1 = (float 1, float 0, float 0, float 1)
-        col2 = (float 0, float 1, float 0, float 1)
-        col3 = (float 0, float 0, float 1, float 1)
-        col4 = (float 1, float 1, float 0, float 1)
-
-    useShader log prog
-
-    vPtr <- pushVertices log ap $ frontFace' z
-    cPtr <- pushColors log ac [col1, col2, col3, col4]
-
-    -- xxx
-    let mv = undefined
-        proj = undefined
-    -- mv   <- modelview log
-    -- proj <- projection log
-
-    -- uniform log "um" um mv
-    -- uniform log "up" up proj
-
-    attrib log "ap" ap Enabled
-    attrib log "ac" ac Enabled
-
-    wrapGL log "drawArrays" $ drawArrays TriangleFan 0 4
-
-    attrib log "ac" ac Disabled
-    attrib log "ap" ap Disabled
-
-    free vPtr
-    free cPtr
-
-    pure ()
-
-testFlowerPot app shader dx thetaz = do
+testTransforms app shader dx thetaz = do
     let log = appLog app
         appmatrix = appMatrix app
         mp = shaderProgram shader
@@ -1648,17 +1573,17 @@ testFlowerPot app shader dx thetaz = do
 
     triangle log (ap, ac, an) (c1, c2, c3) (v1, v2, v3)
 
-coneSectionTest app shaders texMaps t args = do
+carrousel app shaders texMaps t args = do
     let app'    = app & appMultiplyModel model'
         model'  = multMatrices [ rotateY amount' ]
         period' = frint coneSectionSpinPeriod
         t'      = frint . (`mod` coneSectionSpinPeriod) $ t
         theta'  = t' / period' * 2 * pi
         amount' = frint coneSectionSpinFactor * sin theta'
-    cylinderTest app' shaders texMaps 1.3 t args
+    carrousel' app' shaders texMaps 1.3 t args
 
 -- texMaps in this app has 8 elements.
-cylinderTest app shaders texMaps radiusRatio t args = do
+carrousel' app shaders texMaps radiusRatio t args = do
     let log = appLog app
         doRotate   = False
         transform' | doRotate  = appMultiplyModel model'
@@ -1939,18 +1864,15 @@ fs `asterisk` x = map map' fs where map' f = f x
 
 configYamlInline :: ByteString
 configYamlInline =
+    "faceSpec: viking" <>
     "doWolf: true\n" <>
     "wolfFrames: 1\n" <>
     "doInitRotate: true\n" <>
-    "doBorders: true\n" <>
     "doCube: true\n" <>
-    "doCylinder: false\n" <>
     "doCarrousel: false\n" <>
     "doStars: true\n" <>
     "doTorus: false\n" <>
     "doBackground: false\n" <>
-    "doLinesTest: false\n" <>
-    "doShadersTest: false\n" <>
     "doTransformTest: false\n"
 
 drawStars app (shaderC, shaderT) t args = do
