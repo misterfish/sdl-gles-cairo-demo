@@ -447,7 +447,7 @@ import           Graphics.SGCDemo.ImageData ( imageNefeli
                                             , imageWolf
                                             , movieMock )
 
-import           Graphics.SGCDemo.Draw ( pushVertices
+import           Graphics.SGCDemo.Draw ( pushPositions
                                        , pushColors
                                        , rectangle
                                        , triangle
@@ -459,6 +459,8 @@ import           Graphics.SGCDemo.Draw ( pushVertices
                                        , torus
                                        , pushTexCoords
                                        , pushNormals
+                                       , pushAttributesVertex4
+                                       , pushAttributesFloat
                                        , lineStroke
                                        , rectangleStroke
                                        )
@@ -593,7 +595,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , FlipHemisphere (FlipUpper, FlipLower)
                                         , GraphicsTextureMapping (GraphicsTextureMapping)
                                         , ProjectionType (ProjectionFrustum, ProjectionOrtho)
-                                        , VertexData (VertexDataC, VertexDataT)
+                                        , VertexData (VertexDataC, VertexDataT, VertexDataM)
                                         , appConfig
                                         , appLog
                                         , configFaceSpec
@@ -910,8 +912,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     let (texNamesCube, texNamesWolf) = splitAt numCubeTextures texNames
 
     debug' "initShaders"
-    -- (colorShader, texFacesShader, meshShader) <- initShaders log
-    (colorShader, texFacesShader) <- initShaders log
+    (colorShader, texFacesShader, meshShader) <- initShaders log
 
     let toGraphTextMapping' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
         texMapsCube :: [GraphicsTextureMapping]
@@ -947,7 +948,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     debug' "starting loop"
 --     do  let Cmog.Sequence frames = wolfSeq
 --         info' $ printf "wolf seq length %d" (length frames)
-    appLoop config window app' (colorShader, texFacesShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
+    appLoop config window app' (colorShader, texFacesShader, meshShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
 
 appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
     let log = appLog app
@@ -986,7 +987,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     wrapGL log "clear" $ do GL.clear [ ColorBuffer, DepthBuffer ]
 
-    let ( colorShader, texFacesShader ) = shaders
+    let ( colorShader, texFacesShader, meshShader ) = shaders
         doBackground = config & configDoBackground
 
     when doBackground $ do
@@ -1014,7 +1015,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
     when (config & configDoTorus)     $ torusTest app'' (colorShader, texFacesShader) texMapsCube' t args
     when (config & configDoWolf)      $ do
         let wolfSeq = fromJust wolfSeqMb
-        drawWolf app'' wolfSeq texFacesShader texMapsWolf' flipper t args
+        drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
@@ -1582,8 +1583,7 @@ initShaders log = do
              , "texture", "ambientStrength", "specularStrength" )
         extra3 = Just (["transpose_inverse_model"], [])
 
-    -- (,,) <$> colorShader <*> texFacesShader <*> meshShader
-    (,) <$> colorShader <*> texFacesShader
+    (,,) <$> colorShader <*> texFacesShader <*> meshShader
 
 testTransforms app shader dx thetaz = do
     let log = appLog app
@@ -1779,7 +1779,7 @@ initWolf configYaml = do
 
     Cmog.parse wolfConfig
 
-drawWolf app wolfSeq texFacesShader texMaps flipper t args = do
+drawWolf app wolfSeq shader texMaps flipper t args = do
     let _app = app & appMultiplyModel model'
         log = appLog app
         flIsFlipping'
@@ -1810,11 +1810,13 @@ drawWolf app wolfSeq texFacesShader texMaps flipper t args = do
                               , translateX $ inv 0.25
                               , translateZ 0.275 ]
         appmatrix = appMatrix _app
-        prog         = shaderProgram texFacesShader
-        (um, uv, up) = shaderMatrix texFacesShader
-        extraT     = shaderExtra texFacesShader
-        (_:doVaryOpacityUniform':_) = fst . fromJust $ extraT
-        udvot = doVaryOpacityUniform'
+        prog         = shaderProgram shader
+        (um, uv, up) = shaderMatrix shader
+        extraT     = shaderExtra shader
+
+        -- (_:doVaryOpacityUniform':_) = fst . fromJust $ extraT
+        -- udvot = doVaryOpacityUniform'
+
         (model, view, proj) = map3 stackPop' appmatrix
 
         Cmog.Sequence frames' = wolfSeq
@@ -1822,23 +1824,22 @@ drawWolf app wolfSeq texFacesShader texMaps flipper t args = do
         frame' = head frames'
         Cmog.SequenceFrame bursts' = frame'
 
-        draw' = drawWolfBurst log appmatrix texFacesShader
+        draw' = drawWolfBurst log appmatrix shader
 
     useShader log prog
     uniform log "model" um =<< toMGC model
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
-    uniform log "udvot" udvot glFalseF
+    -- uniform log "udvot" udvot glFalseF
 
-    -- for this demo, just the first n bursts (enough to paint something
-    -- wolf-like).
-    -- also, texture indices are hardcoded.
+    -- @demo just the first n bursts (enough to paint something
+    -- wolf-like); also, texture indices are hardcoded.
     mapM_ (draw' $ Just 9)  . take 4          $ bursts'
     mapM_ (draw' $ Just 11) . take 1 . drop 4 $ bursts'
 
--- textureIdx is a kludge for this demo -- should figure out dynamically.
-drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
-    let VertexDataT vp vt vn utt = shaderVertexData texFacesShader
+-- @demo textureIdx is a kludge -- should figure out dynamically.
+drawWolfBurst log appmatrix shader textureIdxMb burst = do
+    let VertexDataM ap atc an ase aac adc asc utt uas uss = shaderVertexData shader
 
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
@@ -1867,22 +1868,46 @@ drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
 
     activateTextureMaybe log utt textureIdxMb
 
-    vPtr <- pushVertices log vp . map unvertex3 $ wolfVert'
-    tcPtr <- pushTexCoords log vt . map unvertex4 $ wolfTexCoords'
-    nPtr <- pushNormals log vn . map unvertex4 $ wolfNormals'
-    attrib log "vp" vp Enabled
-    attrib log "vt" vt Enabled
-    attrib log "vn" vn Enabled
+    -- xxx
+    uniform log "ambient strength" uas (1.0 :: Float)
+    uniform log "specular strength" uss (10.0 :: Float)
+
+    vPtr <- pushPositions log ap wolfVert'
+    tcPtr <- pushTexCoords log atc wolfTexCoords'
+    nPtr <- pushNormals log an wolfNormals'
+
+    -- xxx
+    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ Vertex4 0.0 0.0 1.0 1.0
+    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ Vertex4 1.0 1.0 0.0 1.0
+    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ Vertex4 1.0 0.0 0.0 1.0
+    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ 10.0
+
+    attrib log "ap" ap Enabled
+    attrib log "atc" atc Enabled
+    attrib log "an" an Enabled
+    attrib log "adc" adc Enabled
+    attrib log "aac" aac Enabled
+    attrib log "asc" asc Enabled
+    attrib log "ase" ase Enabled
     wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
-    attrib log "vn" vn Disabled
-    attrib log "vt" vt Disabled
-    attrib log "vp" vp Disabled
+    attrib log "ase" ase Disabled
+    attrib log "asc" asc Disabled
+    attrib log "aac" aac Disabled
+    attrib log "adc" adc Disabled
+    attrib log "an" an Disabled
+    attrib log "atc" atc Disabled
+    attrib log "ap" ap Disabled
+
+    free sePtr
+    free scPtr
+    free acPtr
+    free dcPtr
     free nPtr
     free tcPtr
     free vPtr
 
-unvertex3 (Vertex3 x y z) = (x, y, z)
-unvertex4 (Vertex4 x y z w) = (x, y, z, w)
+-- unvertex3 (Vertex3 x y z) = (x, y, z)
+-- unvertex4 (Vertex4 x y z w) = (x, y, z, w)
 
 -- For this demo, hardcoded in drawWolf. For a real app, will require a map
 -- of user-provided texture names to TextureObject structures.

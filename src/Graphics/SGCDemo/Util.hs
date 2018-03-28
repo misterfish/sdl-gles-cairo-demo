@@ -23,6 +23,10 @@ module Graphics.SGCDemo.Util ( (<|.>)
                              , concatTuples4
                              , concatVectors3
                              , concatVectors4
+                             , concatVertex1
+                             , concatVertex2
+                             , concatVertex3
+                             , concatVertex4
                              , wrapGL
                              , wrapGLStart
                              , wrapGLEnd
@@ -110,6 +114,10 @@ import           Graphics.Rendering.OpenGL as GL
                  , Color3 (Color3)
                  , GLint
                  , GLfloat
+                 , Vertex1 ( Vertex1 )
+                 , Vertex2 ( Vertex2 )
+                 , Vertex3 ( Vertex3 )
+                 , Vertex4 ( Vertex4 )
                  , withMatrix
                  , errors )
 
@@ -207,6 +215,19 @@ concatVectors4 :: [Vector4 Float] -> [Float]
 concatVectors4 = foldr fold' [] where
     fold' (Vector4 x y z w) acc = x : y : z : w : acc
 
+concatVertex1 :: [Vertex1 Float] -> [Float]
+concatVertex1 = foldr folder' [] where
+    folder' (Vertex1 a) acc = a : acc
+concatVertex2 :: [Vertex2 Float] -> [Float]
+concatVertex2 = foldr folder' [] where
+    folder' (Vertex2 a b) acc = a : b : acc
+concatVertex3 :: [Vertex3 Float] -> [Float]
+concatVertex3 = foldr folder' [] where
+    folder' (Vertex3 a b c) acc = a : b : c : acc
+concatVertex4 :: [Vertex4 Float] -> [Float]
+concatVertex4 = foldr folder' [] where
+    folder' (Vertex4 a b c d) acc = a : b : c : d : acc
+
 frint :: (Num b, Integral a) => a -> b
 frint = fromIntegral
 
@@ -247,8 +268,8 @@ color3 :: Integral a => a -> a -> a -> Color3 Float
 color3 r g b = Color3 (c r) (c g) (c b) where
     c = (/ 255) . frint
 
-color :: Integral a => a -> a -> a -> a -> (Float, Float, Float, Float)
-color r g b a = (x r, x g, x b, x a) where
+color :: Integral a => a -> a -> a -> a -> Vertex4 Float
+color r g b a = Vertex4 (x r) (x g) (x b) (x a) where
     x = (/ 255) . frint
 
 up3fst f (a, b, c) = (f a, b, c)

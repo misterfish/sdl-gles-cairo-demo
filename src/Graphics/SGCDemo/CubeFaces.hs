@@ -137,7 +137,7 @@ import           Graphics.Rendering.OpenGL as GL
                  , rect
                  , clearColor )
 
-import           Graphics.SGCDemo.Draw ( pushVertices
+import           Graphics.SGCDemo.Draw ( pushPositions
                                        , pushColors
                                        , rectangle
                                        , triangle
@@ -295,18 +295,18 @@ drawCubeFaces app shaders dimension flipper t texNames args = do
         px1             = dim
         nx1             = inv px1
         py1             = 0 + 2 * dim
-        frontFace       = [ ( nx1 , 0   , 0 )
-                          , ( nx1 , py1 , 0 )
-                          , ( px1 , py1 , 0 )
-                          , ( px1 , 0   , 0 ) ]
+        frontFace       = [ Vertex3 nx1 0 0
+                          , Vertex3 nx1 py1 0
+                          , Vertex3 px1 py1 0
+                          , Vertex3 px1 0 0 ]
 
     useShader log prog
 
     let c1 = concat . replicate 4 $ texCoords hemi' 0 -- 16 vertices (4 faces)
         c2 = concat . replicate 4 $ texCoords hemi' 1 -- 16 vertices (4 faces)
-        n1 = replicateX 32 $ (0, 0, 1.0, 1.0)
+        n1 = replicateX 32 $ Vertex4 0 0 1.0 1.0
 
-    vPtr  <- pushVertices log vp  . concat . replicate 8 $ frontFace -- 32 vertices
+    vPtr  <- pushPositions log vp  . concat . replicate 8 $ frontFace -- 32 vertices
     tcPtr <- pushTexCoords log vt $ c1 <> c2 -- 32 vertices
     nPtr <- pushNormals log vn n1
 
@@ -334,10 +334,10 @@ texCoords = texCoords' where
     texCoords' FlipLower 1 = [ tx01, tx00, tx10, tx11 ]
 
     -- 3rd coord is often ignored.
-    tx01 = (0, 1, 0, 1)
-    tx00 = (0, 0, 0, 1)
-    tx10 = (1, 0, 0, 1)
-    tx11 = (1, 1, 0, 1)
+    tx01 = Vertex4 0 1 0 1
+    tx00 = Vertex4 0 0 0 1
+    tx10 = Vertex4 1 0 0 1
+    tx11 = Vertex4 1 1 0 1
 
 rotateAndNudge :: Bool -> FlipHemisphere -> String -> DMat -> DMat
 rotateAndNudge isInner hemi which model

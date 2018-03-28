@@ -143,8 +143,8 @@ initShaderTextureFaces log vShaderSrc fShaderSrc mvp (ap, atc, an, utt) extra = 
     shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderT shader'
 
-initShaderMesh log vShaderSrc fShaderSrc mvp (ap, ac, an, ase, aac, adc, asc, utt, uas, uss) extra = do
-    let locs' = InitShaderMesh ap ac an ase aac adc asc utt uas uss
+initShaderMesh log vShaderSrc fShaderSrc mvp (ap, atc, an, ase, aac, adc, asc, utt, uas, uss) extra = do
+    let locs' = InitShaderMesh ap atc an ase aac adc asc utt uas uss
     shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderM shader'
 
@@ -166,10 +166,10 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
         extra'' u' a' = (,) <$> u' <*> a'
     let InitShaderColor cap cac can = locs
         InitShaderTexture tap tatc tan tutt = locs
-        InitShaderMesh map' mac man mase maac madc masc mutt muas muss = locs
+        InitShaderMesh map' matc man mase maac madc masc mutt muas muss = locs
     let vertexDataC' = VertexDataC <$> att' cap   <*> att' cac   <*> att' can
         vertexDataT' = VertexDataT <$> att' tap   <*> att' tatc  <*> att' tan  <*> unif' tutt
-        vertexDataM' = VertexDataM <$> att' map'  <*> att' mac   <*> att' man
+        vertexDataM' = VertexDataM <$> att' map'  <*> att' matc   <*> att' man
                                    <*> att' mase  <*> att' maac  <*> att' madc <*> att' masc
                                    <*> unif' mutt <*> unif' muas <*> unif' muss
         vertexData' = case shaderType of "t" -> vertexDataT'
@@ -179,7 +179,7 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
 
 -- no 'enable' necessary for uniforms.
 -- attribs need to be enabled / disabled when drawArrays is called.
--- should 'use' the program in the render loop.
+-- program needs to be 'use'd in the render loop.
 
 -- | bind the texture, set it to 'active', and pass its sampler to the
 -- shader via a uniform.

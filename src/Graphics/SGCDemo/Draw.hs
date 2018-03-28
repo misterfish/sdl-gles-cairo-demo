@@ -7,9 +7,13 @@ module Graphics.SGCDemo.Draw ( triangle
                           , rectangle
                           , triangleStrip
                           , rectangleStroke
-                          , pushVertices
+                          , pushPositions
                           , pushTexCoords
                           , pushNormals
+                          -- , pushAttributesVertex1
+                          , pushAttributesVertex3
+                          , pushAttributesVertex4
+                          , pushAttributesFloat
                           , pushColors
                           , torus
                           , lineStroke ) where
@@ -27,11 +31,12 @@ import           Data.StateVar        as STV ( ($=) )
 import qualified Data.StateVar        as STV ( get )
 import qualified Data.Vector.Storable as DVS ( (!) , Vector , length , fromList )
 import           Data.Vector.Storable as DVS ( unsafeWith )
-import           Foreign ( Ptr, free, mallocArray, pokeElemOff, pokeArray )
+import           Foreign ( Ptr, free, mallocArray, pokeElemOff, pokeArray, Int32 )
 
 import           Data.Stack ( stackPop )
 import           Graphics.Rendering.OpenGL as GL
-                 ( Vertex3 ( Vertex3 )
+                 ( Vertex1 ( Vertex1 )
+                 , Vertex3 ( Vertex3 )
                  , Vertex4 ( Vertex4 )
                  , Vector3 ( Vector3 )
                  , Vector4 ( Vector4 )
@@ -66,7 +71,7 @@ import           Graphics.SGCDemo.Coords ( rotateX
                                          , translateY
                                          , translateZ
                                          , identityMatrix
-                                         , vec4
+                                         -- , vec4
                                          , multMatrices
                                          , toMGC
                                          , verple3
@@ -96,6 +101,10 @@ import           Graphics.SGCDemo.Util ( checkSDLError
                                        , concatTuples4
                                        , concatVectors3
                                        , concatVectors4
+                                       , concatVertex1
+                                       , concatVertex2
+                                       , concatVertex3
+                                       , concatVertex4
                                        , toDeg
                                        , vcross
                                        , inv
@@ -113,6 +122,7 @@ import           Graphics.SGCDemo.Types ( Log (Log, info, warn, err)
                                         , Shader (ShaderC, ShaderT)
                                         , ShaderD (ShaderDT, ShaderDC)
                                         , DrawInfo (DrawVertex, DrawColor, DrawTexCoord, DrawNormal)
+                                        -- , VertexN (VertexN1, VertexN3, VertexN4)
                                         , appLog
                                         , drawInfoAttribLocation
                                         , drawInfoVertexCoords
@@ -121,11 +131,11 @@ import           Graphics.SGCDemo.Types ( Log (Log, info, warn, err)
                                         , drawInfoNormal
                                         , appMatrix )
 
--- not really useful apart from testing simple triangles.
 triangle log (av, ac, an) (c1, c2, c3) (v1, v2, v3) = do
     let p (Vertex3 x y z) = (x, y, z)
 
-    vPtr <- pushVertices log av [ p v1, p v2, p v3 ]
+    -- vPtr <- pushPositions log av [ p v1, p v2, p v3 ]
+    vPtr <- pushPositions log av [ v1, v2, v3 ]
     cPtr <- pushColors   log ac [ c1, c2, c3 ]
 
     -- normals are not currently possible here.
@@ -139,17 +149,14 @@ triangle log (av, ac, an) (c1, c2, c3) (v1, v2, v3) = do
     free cPtr
     free vPtr
 
-getptrs app data'= do
+getptrs log data'= do
     let unvertex3 (Vertex3 x y z)    = (x, y, z)
         unvertex4 (Vertex4 x y z w)  = (x, y, z, w)
-        unvector4 (Vector4 x y z w)  = (x, y, z, w)
-        getptr' (DrawVertex av vs)   = pushVertices app av $
-            map unvertex3 vs
-        getptr' (DrawColor ac cs)    = pushColors app ac cs
-        getptr' (DrawTexCoord at ts) = pushTexCoords app at $
-            map unvertex4 ts
-        getptr' (DrawNormal an ns)   = pushNormals app an $
-            map unvector4 ns
+        unvertex4 (Vertex4 x y z w)  = (x, y, z, w)
+        getptr' (DrawVertex av vs)   = pushPositions log av vs
+        getptr' (DrawColor ac cs)    = pushColors log ac cs
+        getptr' (DrawTexCoord at ts) = pushTexCoords log at ts
+        getptr' (DrawNormal an ns)   = pushNormals log an ns
     mapM getptr' data'
 
 notEqual []     = error "notEqual: empty list"
@@ -191,9 +198,9 @@ triangleStrip' log data' partitions = do
 
 rectangle app (av, ac, an) (c1, c2, c3, c4) (v1, v2, v3, v4) = do
     let log = appLog app
-        p (Vertex3 x y z) = (x, y, z)
+        -- p (Vertex3 x y z) = (x, y, z)
 
-    vPtr <- pushVertices log av [ p v1, p v2, p v3, p v4 ]
+    vPtr <- pushPositions log av [ v1, v2, v3, v4 ]
     cPtr <- pushColors log ac [ c1, c2, c3, c4 ]
 
     attrib log "av" av Enabled
@@ -274,65 +281,39 @@ lineStroke' app shader (c1, c2) dr thickness = do
 -- note that there is no distinction at this level between normal, texture,
 -- and color arrays: they are all just attribute as far as we are concerned,
 -- and the shaders give them meaning.
--- it's nice to have different function names, but we could reduce a lot of duplication here.
--- also pushNormals takes Vectors while the rest take tuples xxx
 
-pushColors :: Log -> AttribLocation -> [(Float, Float, Float, Float)] -> IO (Ptr Float)
-pushColors log attribLocation tuples = do
-    let coords' = concatTuples4 tuples
-        numComp' = 4 -- per vertex
-        dataType' = GL.Float
-        stride' = 0
-        len' = length coords'
-    tgt' <- mallocArray len' :: IO (Ptr Float)
-    let colorArrayDescriptor = VertexArrayDescriptor numComp' dataType' stride' tgt'
-    pokeArray tgt' coords'
-    wrapGL log "vertexAttribPointer colors" $ vertexAttribPointer attribLocation $= (ToFloat, colorArrayDescriptor)
+pushTexCoords log = pushAttributesVertex4 log "attrib: tex coords"
+pushNormals   log = pushAttributesVertex4 log "attrib: normals"
+pushPositions log = pushAttributesVertex3 log "attrib: vertex positions"
+pushColors    log = pushAttributesVertex4 log "attrib: colors"
+
+pushAttributesVertexN :: Int32 -> GL.DataType -> Log -> String -> AttribLocation -> [Float] -> IO (Ptr Float)
+pushAttributesVertexN numComp dataType log tag attribLocation points = do
+    let stride' = 0
+    tgt' <- mallocArray $ length points :: IO (Ptr Float)
+    let desc' = VertexArrayDescriptor numComp dataType stride' tgt'
+    pokeArray tgt' points
+    wrapGL log tag $ vertexAttribPointer attribLocation $= (ToFloat, desc')
     pure tgt'
 
-pushVertices :: Log -> AttribLocation -> [(Float, Float, Float)] -> IO (Ptr Float)
-pushVertices log attribLocation tuples = do
-    let coords' = concatTuples3 tuples
-        numComp' = 3 -- per vertex
-        dataType' = GL.Float
-        stride' = 0
-        len' = length coords'
-    tgt' <- mallocArray len' :: IO (Ptr Float)
-    let vertexArrayDescriptor = VertexArrayDescriptor numComp' dataType' stride' tgt'
-    pokeArray tgt' coords'
-    wrapGL log "vertexAttribPointer vertices" $ vertexAttribPointer attribLocation $= (ToFloat, vertexArrayDescriptor)
-    pure tgt'
+pushAttributesFloat :: Log -> String -> AttribLocation -> [Float] -> IO (Ptr Float)
+pushAttributesFloat log tag attribLocation ns = do
+    pushAttributesVertexN 1 GL.Float log tag attribLocation ns
 
-pushTexCoords :: Log -> AttribLocation -> [(Float, Float, Float, Float)] -> IO (Ptr Float)
-pushTexCoords log attribLocation tuples = do
-    let coords' = concatTuples4 tuples
-        numComp' = 4 -- per vertex
-        dataType' = GL.Float
-        stride' = 0
-        len' = length coords'
-    tgt' <- mallocArray len' :: IO (Ptr Float)
-    let texCoordArrayDescriptor = VertexArrayDescriptor numComp' dataType' stride' tgt'
-    pokeArray tgt' coords'
-    wrapGL log "texCoordAttribPointer vertices" $ vertexAttribPointer attribLocation $= (ToFloat, texCoordArrayDescriptor)
-    pure tgt'
+pushAttributesVertex3 :: Log -> String -> AttribLocation -> [Vertex3 Float] -> IO (Ptr Float)
+pushAttributesVertex3 log tag attribLocation verts = do
+    let coords' = concatVertex3 verts
+    pushAttributesVertexN 3 GL.Float log tag attribLocation coords'
 
-pushNormals :: Log -> AttribLocation -> [(Float, Float, Float, Float)] -> IO (Ptr Float)
-pushNormals log attribLocation tuples = do
-    let coords' = concatTuples4 tuples
-        numComp' = 4 -- per vertex
-        dataType' = GL.Float
-        stride' = 0
-        len' = length coords'
-    tgt' <- mallocArray len' :: IO (Ptr Float)
-    let normalArrayDescriptor = VertexArrayDescriptor numComp' dataType' stride' tgt'
-    pokeArray tgt' coords'
-    wrapGL log "normalAttribPointer vertices" $ vertexAttribPointer attribLocation $= (ToFloat, normalArrayDescriptor)
-    pure tgt'
+pushAttributesVertex4 :: Log -> String -> AttribLocation -> [Vertex4 Float] -> IO (Ptr Float)
+pushAttributesVertex4 log tag attribLocation verts = do
+    let coords' = concatVertex4 verts
+    pushAttributesVertexN 4 GL.Float log tag attribLocation coords'
 
 -- algorithm from StackOverflow.
 -- color-specific, no texture mapping.
 
-sphere :: App -> ShaderD -> (Int, Int) -> (Float, Float, Float, Float) -> Float -> IO ()
+sphere :: App -> ShaderD -> (Int, Int) -> Vertex4 Float -> Float -> IO ()
 sphere app shader (slices, stacks) colour r = do
     let log = appLog app
         appmatrix = appMatrix app
@@ -431,7 +412,8 @@ coneSection' app shaderD npoints height topRadius bottomRadius angBegin angEnd d
         vs          = map vertex'   [ 0 .. npoints - 1]
         texCoord' n = coneSectionVertexTexCoord' (ang' n) n (npoints - 1)
         ts          = map texCoord' [ 0 .. npoints - 1]
-        ns          = concat . replicate npoints $ [vec4 0 0 1.0 1.0]
+        -- ns          = concat . replicate npoints $ [vec4 0 0 1.0 1.0]
+        ns          = concat . replicate npoints $ [Vertex4 0 0 1.0 1.0]
         doTex       = isJust texInfo
         texInfo'    = fromJust texInfo
         texName'    = fst texInfo'

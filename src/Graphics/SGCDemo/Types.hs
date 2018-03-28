@@ -25,6 +25,7 @@ module Graphics.SGCDemo.Types
     , MVPConfig (MVPConfig)
     , ProjectionType (ProjectionFrustum, ProjectionOrtho)
     , VertexData (VertexDataC, VertexDataT, VertexDataM)
+    -- , VertexN (VertexN1, VertexN3, VertexN4)
     , drawInfoAttribLocation
     , drawInfoVertexCoords
     , drawInfoColorCoords
@@ -143,10 +144,10 @@ import           Graphics.Rendering.OpenGL as GL
                  , GLmatrix
                  , GLfloat
                  , GLdouble
+                 , Vertex1
                  , Vertex2
                  , Vertex3
                  , Vertex4
-                 , Vector4
                  , Program
                  , UniformLocation
                  , AttribLocation
@@ -210,6 +211,8 @@ data Shader' = Shader' { shader'Program    :: Program
                        , shader'VertexData :: VertexData
                        , shader'Extra      :: Maybe ([UniformLocation], [AttribLocation]) }
                deriving (Eq, Show)
+
+-- data VertexN = VertexN1 (Vertex1 Float) | VertexN3 (Vertex3 Float) | VertexN4 (Vertex4 Float)
 
 -- isShaderC shader@(ShaderC _ ) = True
 -- isShaderC _                   = False
@@ -326,10 +329,13 @@ data FlipHemisphere = FlipUpper
                     | FlipLower
                       deriving (Show, Eq)
 
+-- we use VertexX (not VectorX), also for the normal, because Vector just
+-- makes it more complicated with no benefit.
+
 data DrawInfo       = DrawVertex   AttribLocation [Vertex3 Float]
-                    | DrawColor    AttribLocation [Color]
+                    | DrawColor    AttribLocation [Vertex4 Float]
                     | DrawTexCoord AttribLocation [Vertex4 Float]
-                    | DrawNormal   AttribLocation [Vector4 Float]
+                    | DrawNormal   AttribLocation [Vertex4 Float]
 
 drawInfoAttribLocation (DrawVertex   al _) = al
 drawInfoAttribLocation (DrawColor    al _) = al
