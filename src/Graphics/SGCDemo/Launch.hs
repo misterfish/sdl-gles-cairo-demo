@@ -435,6 +435,10 @@ import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
 
 import           Graphics.SGCDemo.ImageData ( imageNefeli
                                             , imageNeske
+                                            , imageHarlem
+                                            , imageShigeru
+                                            , imageFence
+                                            , imageLondon
                                             , imageViking
                                             , imagePlaza1
                                             , imagePlaza2
@@ -489,6 +493,7 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , getShadersInline
                                          , initShaderColor
                                          , initShaderTextureFaces
+                                         , initShaderMesh
                                          , useShaderM
                                          , useShader
                                          , getShadersFilesystem
@@ -700,118 +705,141 @@ faceSpec log config rands = do
     info log $ "Please wait . . . (parsing face specs, this will take a while)"
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
-    -- xxx, don't do unnecessary work (check arg early)
+    let decode = decodeImage' log
 
-    let g1 = GraphicsSingle (decodeImage' imageNefeli) True
-        g2 = GraphicsSingle (decodeImage' imageNeske) True
-        g3' = map decodeImage' movieMock
-        g3 = GraphicsMoving (g3' `deepseq` (concat . repeat $ g3')) 1 0
-        g4 = GraphicsSingleCairo Nothing catFrames
-        g5 = GraphicsSingleCairo (Just $ decodeImage' imageNeske) (bubbleFrames rands 0)
+    img1' <- decode imageNefeli
+    img2' <- decode imageNeske
+    img3' <- decode imageWolf
+    imgViking' <- decode imageViking
+    imgHarlem' <- decode imageHarlem
+    imgShigeru' <- decode imageShigeru
+    imgFence' <- decode imageFence
+    imgLondon' <- decode imageLondon
+    img5' <- decode imagePlaza1
+    img6' <- decode imagePlaza2
+    img7' <- decode imagePlaza3
+    img8' <- decode imagePlaza4
+
+    let g1 = GraphicsSingle img1' True
+        g2 = GraphicsSingle img2' True
+
+    gmovie' <- mapM decode movieMock
+
+    let gmovie = GraphicsMoving (gmovie' `deepseq` (concat . repeat $ gmovie')) 1 0
+        gcat = GraphicsSingleCairo Nothing catFrames
+        g5 = GraphicsSingleCairo (Just img2') (bubbleFrames rands 0)
         g6 = GraphicsSingleCairo Nothing (bubbleFrames rands 0)
-        gwolf = GraphicsSingle (decodeImage' imageWolf) True
-        gviking = GraphicsSingle (decodeImage' imageViking) True
-        gplaza1 = GraphicsSingle (decodeImage' imagePlaza1) True
-        gplaza2 = GraphicsSingle (decodeImage' imagePlaza2) True
-        gplaza3 = GraphicsSingle (decodeImage' imagePlaza3) True
-        gplaza4 = GraphicsSingle (decodeImage' imagePlaza4) True
+        gwolf = GraphicsSingle img3' True
+        gviking = GraphicsSingle imgViking' True
+        gharlem = GraphicsSingle imgHarlem' True
+        gshigeru = GraphicsSingle imgShigeru' True
+        glondon = GraphicsSingle imgLondon' True
+        gfence = GraphicsSingle imgFence' True
+        gplaza1 = GraphicsSingle img5' True
+        gplaza2 = GraphicsSingle img6' True
+        gplaza3 = GraphicsSingle img7' True
+        gplaza4 = GraphicsSingle img8' True
 
-        -- tn = NoTexture
+    -- These calls allocate the backing pixel arrays.
+    -- It seems that it is ok to only allocate one of each kind and reuse
+    -- it.
 
-    t1 <- noCairo 512 512
-    t2 <- noCairo 512 512
-    t3 <- noCairo 512 512
-    t4 <- withCairo 512 512
-    t5 <- withCairo 512 512
-    t6 <- withCairo 512 512
-    twolf <- noCairo 512 512
-    tviking <- noCairo 256 256
-    tplaza <- noCairo 256 256
+    tnc_512_1 <- noCairo 512 512
+    -- tnc_512_2 <- noCairo 512 512
+    -- tnc_512_3 <- noCairo 512 512
+
+    tnc_256_1 <- noCairo 256 256
+    -- tnc_256_2 <- noCairo 256 256
+
+    twc_512_1 <- withCairo 512 512
+    -- twc_512_2 <- withCairo 512 512
+    -- twc_512_3 <- withCairo 512 512
+
+    let tcat = twc_512_1
+        tharlem = tnc_256_1
+        tshigeru = tnc_256_1
+        tfence = tnc_256_1
+        tlondon = tnc_256_1
+        t1 = tnc_512_1
+        t2 = tnc_512_1
+        tmovie = tnc_512_1
+        twolf = tnc_512_1
 
     -- outer / inner
-    let faceSpecExtreme = [ (t4, g4), (t2, g2), (t3, g3), (t1, g1)
-                          , (tviking, gviking), (tplaza, gplaza2), (t4, g4), (t5, g5) ]
+    let faceSpecExtreme      = [ (tcat, gcat), (t2, g2), (tmovie, gmovie), (t1, g1)
+                               , (tnc_256_1, gviking), (tnc_256_1, gplaza2), (tcat, gcat), (twc_512_1, g5) ]
 
-    let faceSpecSimple1 = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
-                          , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
+    let faceSpecSimple       = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
+                               , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
-    let faceSpecSimple2 = [ (t2, g2), (t2, g2), (t2, g2), (t2, g2)
-                          , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
+    let faceSpecOneMovie     = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
+                               , (t2, g2), (t2, g2), (t2, g2), (tmovie, gmovie) ]
 
-    let faceSpecSimple3 = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
-                          , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
+    let faceSpecNoMovie      = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
+                               , (t2, g2), (t2, g2), (tcat, gcat), (twc_512_1, g5) ]
 
-    let faceSpecSimple4 = [ (t2, g2), (t2, g2), (t2, g2), (t2, g2)
-                          , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
+    let faceSpecEightMovies  = [ (tmovie, gmovie), (tmovie, gmovie), (tmovie, gmovie), (tmovie, gmovie)
+                               , (tmovie, gmovie), (tmovie, gmovie), (tmovie, gmovie), (tmovie, gmovie) ]
 
-    let faceSpecOneMovie = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
-                           , (t2, g2), (t2, g2), (t2, g2), (t3, g3) ]
+    let faceSpecOneCat       = [ (tcat, gcat), (t1, g1), (t1, g1), (t1, g1)
+                               , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
 
-    let faceSpecNoMovie = [ (t1, g1), (t1, g1), (t1, g1), (t1, g1)
-                          , (t2, g2), (t2, g2), (t4, g4), (t5, g5) ]
+    let faceSpecTwoCats      = [ (tcat, gcat), (tcat, gcat), (t1, g1), (t1, g1)
+                               , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
 
-    -- mooi + snel, ook op 565 (computer)
-    let faceSpecEightMovies = [ (t3, g3), (t3, g3), (t3, g3), (t3, g3)
-                             , (t3, g3), (t3, g3), (t3, g3), (t3, g3) ]
+    let faceSpecFourCats     = [ (tcat, gcat), (tcat, gcat), (tcat, gcat), (tcat, gcat)
+                               , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
 
-    -- mooi
-    let faceSpecOneCat = [ (t4, g4), (t1, g1), (t1, g1), (t1, g1)
-                         , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
+    let faceSpecEightCats    = [ (tcat, gcat), (tcat, gcat), (tcat, gcat), (tcat, gcat)
+                               , (tcat, gcat), (tcat, gcat), (tcat, gcat), (tcat, gcat) ]
 
-    -- mooi
-    let faceSpecTwoCats = [ (t4, g4), (t4, g4), (t1, g1), (t1, g1)
-                          , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
+    let faceSpecEightBubbles = [ (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6)
+                               , (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6) ]
 
-    -- mooi op 8888
-    let faceSpecFourCats = [ (t4, g4), (t4, g4), (t4, g4), (t4, g4)
-                           , (t1, g1), (t1, g1), (t1, g1), (t1, g1) ]
+    let faceSpecWolf         = [ (twolf, gwolf), (t1, g1), (t1, g1), (t1, g1)
+                               , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
 
-    -- mooi + snel, ook op 565 (computer)
-    let faceSpecEightCats = [ (t4, g4), (t4, g4), (t4, g4), (t4, g4)
-                            , (t4, g4), (t4, g4), (t4, g4), (t4, g4) ]
+    let faceSpecViking       = [ (tnc_256_1, gviking), (tnc_256_1, gviking), (tnc_256_1, gviking), (tnc_256_1, gviking)
+                               , (tnc_256_1, gplaza1), (tnc_256_1, gplaza3), (tnc_256_1, gplaza4), (tnc_256_1, gplaza2) ]
 
-    let faceSpecEightBubbles = [ (t6, g6), (t6, g6), (t6, g6), (t6, g6)
-                               , (t6, g6), (t6, g6), (t6, g6), (t6, g6) ]
-
-    let faceSpecWolf    = [ (twolf, gwolf), (t1, g1), (t1, g1), (t1, g1)
-                          , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
-
-    let faceSpecViking    = [ (tviking, gviking), (tviking, gviking), (tviking, gviking), (tviking, gviking)
-                            , (tplaza, gplaza1), (tplaza, gplaza2), (tplaza, gplaza3), (tplaza, gplaza4) ]
+    let faceSpecEightPics    = [ (tharlem, gharlem), (tshigeru, gshigeru), (tfence, gfence), (tlondon, glondon)
+                               , (tnc_256_1, gplaza1), (tnc_256_1, gplaza3), (tnc_256_1, gplaza4), (tnc_256_1, gplaza2) ]
 
     let faceSpec' = config & configFaceSpec
 
-    let spec | faceSpec' == "extreme"       =  faceSpecExtreme
-             | faceSpec' == "simple1"       =  faceSpecSimple1
-             | faceSpec' == "simple2"       =  faceSpecSimple2
-             | faceSpec' == "simple3"       =  faceSpecSimple3
-             | faceSpec' == "simple4"       =  faceSpecSimple4
-             | faceSpec' == "onecat"        =  faceSpecOneCat
-             | faceSpec' == "twocats"       =  faceSpecTwoCats
-             | faceSpec' == "fourcats"      =  faceSpecFourCats
-             | faceSpec' == "eightcats"     =  faceSpecEightCats
-             | faceSpec' == "eightbubbles"  =  faceSpecEightBubbles
-             | faceSpec' == "onemovie"      =  faceSpecOneMovie
-             | faceSpec' == "nomovie"       =  faceSpecNoMovie
-             | faceSpec' == "eightmovies"   =  faceSpecEightMovies
-             | faceSpec' == "wolf"          =  faceSpecWolf
-             | faceSpec' == "viking"        =  faceSpecViking
-             | otherwise                    =  error $ printf "Unknown value for faceSpec: %s" faceSpec'
+    let spec | faceSpec' == "extreme"       =  pure faceSpecExtreme
+             | faceSpec' == "simple"        =  pure faceSpecSimple
+             | faceSpec' == "onecat"        =  pure faceSpecOneCat
+             | faceSpec' == "twocats"       =  pure faceSpecTwoCats
+             | faceSpec' == "fourcats"      =  pure faceSpecFourCats
+             | faceSpec' == "eightcats"     =  pure faceSpecEightCats
+             | faceSpec' == "eightbubbles"  =  pure faceSpecEightBubbles
+             | faceSpec' == "onemovie"      =  pure faceSpecOneMovie
+             | faceSpec' == "nomovie"       =  pure faceSpecNoMovie
+             | faceSpec' == "eightmovies"   =  pure faceSpecEightMovies
+             | faceSpec' == "wolf"          =  pure faceSpecWolf
+             | faceSpec' == "vikingplaza"   =  pure faceSpecViking
+             | faceSpec' == "eightpics"     =  pure faceSpecEightPics
+             | otherwise                    =  die log $ printf "Unknown value for faceSpec: %s" faceSpec'
 
-    pure spec
+    spec
 
-wolfSpec :: Cmog.TextureMap -> IO [(Tex, GraphicsData)]
-wolfSpec textureMap = wolfSpecGraphicsDecode textures' where
+wolfSpec :: Log -> Cmog.TextureMap -> IO [(Tex, GraphicsData)]
+wolfSpec log textureMap = wolfSpecGraphicsDecode log textures' where
     tex' config' = (Cmog.tcWidth config', Cmog.tcHeight config', Cmog.tcImageBase64 config')
     textures' = map tex' textureConfigs'
     textureConfigs' = values textureMap
 
-wolfSpecGraphicsDecode spec = do
+wolfSpecGraphicsDecode log spec = do
     let w   =  fst3
         h   =  snd3
         img =  thd3
-        gs  =  flip map spec  $ \spec' -> GraphicsSingle (decodeImage' . img $ spec') True
+        gs' :: IO [GraphicsData]
+        gs' =  flip mapM spec  $ \spec' -> do
+            img' <- decodeImage' log . img $ spec'
+            pure $ GraphicsSingle img' True
     ts      <- flip mapM spec $ \spec' -> noCairo (w spec') (h spec')
+    gs <- gs'
     pure $ zip ts gs
 
 dimension = 0.5
@@ -847,16 +875,16 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     configYaml <- if isEmbedded then pure configYamlInline
                                 else BS.readFile "config.yaml"
-    let config :: Config
-        config = do  let  error' = error "Couldn't decode config.yaml"
-                     maybe error' id $ Y.decode configYaml
+    config <- do  let  error' = die log "Couldn't decode config.yaml"
+                  maybe error' pure $ Y.decode configYaml
 
     let doWolf        = config & configDoWolf
         numWolfFrames = config & configWolfFrames
-        numWolfFrames'
-          | ConfigWolfFramesNum n     <- numWolfFrames = take n
-          | ConfigWolfFramesStr "all" <- numWolfFrames = id
-          | ConfigWolfFramesStr s     <- numWolfFrames = error $ printf "Invalid string value for number of wolf frames (%s)" s
+        getLimitFrames'
+          | ConfigWolfFramesNum n     <- numWolfFrames = pure $ take n
+          | ConfigWolfFramesStr "all" <- numWolfFrames = pure id
+          | ConfigWolfFramesStr s     <- numWolfFrames = die log $ printf "Invalid string value for number of wolf frames (%s)" s
+    limitFrames' <- getLimitFrames' :: IO ([a] -> [a])
 
     rands <- randoms
     (wolfSpec', wolfSeqMb') <-
@@ -864,10 +892,13 @@ launch_ (androidLog, androidWarn, androidError) args = do
                           textureConfigYaml' <- textureConfigYaml bodyPng64 eyesPng64 furPng64
                           (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml'
                           let Cmog.Sequence wolfSeqFrames' = wolfSeq'
-                              wolfSeq'' = Cmog.Sequence . numWolfFrames' $ wolfSeqFrames'
-                          debug' "forcing"
-                          spec' <- deepseq wolfSeq'' $ wolfSpec wolfTextureMap'
-                          debug' "done forcing"
+                              wolfSeq'' = Cmog.Sequence . limitFrames' $ wolfSeqFrames'
+                          -- deepseq in combination with our limitFrames'
+                          -- function works correctly: it only forces the
+                          -- chunk which results from limitFrames'.
+                          debug' "forcing deepseq"
+                          spec' <- deepseq wolfSeq'' $ wolfSpec log wolfTextureMap'
+                          debug' "done forcing deepseq"
                           pure (spec', Just wolfSeq'')
                   else pure ([], Nothing)
     faceSpec' <- faceSpec log config rands
@@ -938,8 +969,8 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     ( qPressed, click, dragAmounts, wheelOrPinchAmount ) <- processEvents log ( viewportWidth, viewportHeight )
 
-    info' $ printf "wheel or pinch: %s" (show wheelOrPinchAmount)
-    info' $ printf "dragAmounts: %s" (show dragAmounts)
+    debug' $ printf "wheel or pinch: %s" (show wheelOrPinchAmount)
+    debug' $ printf "dragAmounts: %s" (show dragAmounts)
 
     let remainingTranslateZ' = getRemainingTranslateZ app
 
@@ -1275,9 +1306,9 @@ decodeImage imageBase64 = do
         err' e = Left $ "Couldn't decode base64, " ++ e
         err'' e = Left $ "Couldn't decode png, " ++ e
 
-decodeImage' imageBase64 =
-    if (isLeft img) then error "Bad image"
-                    else toRight img where
+decodeImage' log imageBase64 =
+    if (isLeft img) then die log "Bad image"
+                    else pure $ toRight img where
     -- img = trace' "decoding!" $ decodeImage imageBase64
     img = decodeImage imageBase64
     trace' x = trace $ "look " ++ show x
@@ -1541,7 +1572,7 @@ initShaders log = do
         texFacesShader = initShaderTextureFaces log vShaderTextureFaces fShaderTextureFaces mvp2 v2 extra2
         mvp2 = ("model", "view", "projection")
         v2 = ("a_position", "a_texcoord", "a_normal", "texture")
-        extra2 = Just (["transpose_inverse_model", "do_vary_opacity"], [])
+        extra2 = Just (["texture", "transpose_inverse_model", "do_vary_opacity"], [])
 
         meshShader = undefined
 
@@ -1799,7 +1830,7 @@ drawWolf app wolfSeq texFacesShader texMaps flipper t args = do
     mapM_ (draw' $ Just 9)  . take 4          $ bursts'
     mapM_ (draw' $ Just 11) . take 1 . drop 4 $ bursts'
 
--- textureIdx is a kludge -- should figure out dynamically. xxx
+-- textureIdx is a kludge for this demo -- should figure out dynamically.
 drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
     let VertexDataT vp vt vn utt = shaderVertexData texFacesShader
 
@@ -1847,9 +1878,8 @@ drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
 unvertex3 (Vertex3 x y z) = (x, y, z)
 unvertex4 (Vertex4 x y z w) = (x, y, z, w)
 
--- xxx This will require a map of texture names (actual strings
--- provided by the user) to TextureObjects.
--- for this demo, hardcoded in drawWolf.
+-- For this demo, hardcoded in drawWolf. For a real app, will require a map
+-- of user-provided texture names to TextureObject structures.
 activateTextureMaybe log utt textureIdxMb = do
     let none' = do
             info log "[no texture]"
@@ -1864,9 +1894,9 @@ fs `asterisk` x = map map' fs where map' f = f x
 
 configYamlInline :: ByteString
 configYamlInline =
-    "faceSpec: viking" <>
-    "doWolf: true\n" <>
-    "wolfFrames: 1\n" <>
+    "faceSpec: simple\n" <>
+    "doWolf: false\n" <>
+    "wolfFrames: 3\n" <>
     "doInitRotate: true\n" <>
     "doCube: true\n" <>
     "doCarrousel: false\n" <>
@@ -1877,13 +1907,14 @@ configYamlInline =
 
 drawStars app (shaderC, shaderT) t args = do
     let star' = drawStar app (shaderC, shaderT) t args
+    -- To test single star:
     -- star' 0 0.000001 1 0
-    star' 2 4 0.2 0 0 (hsvCycle 100 $ t)
-    star' 1 6 0.1 45 90 (hsvCycle 200 $ t + 30)
-    star' 1 8 0.05 (inv 45) 135 (hsvCycle 300 $ t + 50)
-    star' 1 12 0.025 (inv 45) 135 (hsvCycle 400 $ t + 70)
-    star' 1 20 0.025 (inv 45) 135 (hsvCycle 500 $ t + 90)
-    star' 1 40 0.025 90 180 (hsvCycle 600 $ t + 120)
+    star' 2 4 0.2 0 0             $ hsvCycle 100 (t + 0)
+    star' 1 6 0.1 45 90           $ hsvCycle 200 (t + 30)
+    star' 1 8 0.05 (inv 45) 135   $ hsvCycle 300 (t + 50)
+    star' 1 12 0.025 (inv 45) 135 $ hsvCycle 400 (t + 70)
+    star' 1 20 0.025 (inv 45) 135 $ hsvCycle 500 (t + 90)
+    star' 1 40 0.025 90 180       $ hsvCycle 600 (t + 120)
 
 drawStar app (shaderC, shaderT) t args r velocity scale tilt initAngle hsv = drawStar' app' (shaderC, shaderT) hsv args where
     app'    = app & appMultiplyModel model'
@@ -1908,7 +1939,6 @@ drawStar' app (shaderC, shaderT) hsv args = do
         VertexDataT apt att ant utt = shaderVertexData shaderT
         (cr', cg', cb') = hsv
         col' = color cr' cg' cb' 255
-    -- sphere only accepts color shader currently.
     drawStarSphere app shaderC' col' args
     forM_ [1 .. 4] $ \n -> drawStarCone app shaderC' col' args n 0
     forM_ [1, 3]   $ \m -> drawStarCone app shaderC' col' args 1 m
@@ -1928,7 +1958,6 @@ drawStarCone app shader' col args n m = cone' where
     height' = 1.0
 
     cone' = coneSection app' shader' 60 height' 0.001 0.5 0 (2 * pi) col
-    -- cone' = coneSectionTex app' shader' 60 height' 0.001 0.5 0 (2 * pi) (TextureObject 9) (undefined, undefined, undefined, undefined)
     app'    = app & appMultiplyModel model'
     n' = frint n
     m' = frint m
@@ -1936,3 +1965,7 @@ drawStarCone app shader' col args n m = cone' where
                           , translateY $ ty'
                           , rotateX $ 90 * n'
                           , rotateY $ 90 * m' ]
+
+die log str = do
+    _ <- err log str
+    error str

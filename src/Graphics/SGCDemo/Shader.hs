@@ -7,6 +7,7 @@ module Graphics.SGCDemo.Shader ( uniform
                                , getShadersFilesystem
                                , initShaderColor
                                , initShaderTextureFaces
+                               , initShaderMesh
                                , activateTexture
                                , useShaderM ) where
 
@@ -128,22 +129,24 @@ initProgram log vShaderSrc fShaderSrc = do
     info'' =<< STV.get (programInfoLog prog)
     pure prog
 
-initShaderColor log vShaderSrc fShaderSrc mvp (vp, vc, vn) extra = do
-    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp (vp, vc, vn) [] extra
+-- consider passing utt as an 'extra'.
+
+initShaderColor log vShaderSrc fShaderSrc mvp (ap, ac, an) extra = do
+    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp (ap, ac, an) Nothing extra
     pure $ ShaderC shader'
 
-initShaderTextureFaces log vShaderSrc fShaderSrc mvp (vp, vc, vn, utt) extra = do
-    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp (vp, vc, vn) [utt] extra
+initShaderTextureFaces log vShaderSrc fShaderSrc mvp (ap, atc, an, utt) extra = do
+    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp (ap, atc, an) (Just utt) extra
     pure $ ShaderT shader'
 
-initShaderMesh log vShaderSrc fShaderSrc mvp (vp, vc, vn, utt) extra = do
-    let uas = undefined
-        uss = undefined
-    shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp (vp, vc, vn) [utt, uas, uss] extra
+initShaderMesh log vShaderSrc fShaderSrc mvp (ap, ac, an, utt) extra = do
+    -- let uas = undefined uss = undefined
+    shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp (ap, ac, an) (Just utt) extra
     pure $ ShaderM shader'
 
+-- extra: Maybe (uniforms, atts)
 -- UUU
-initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (vp, vc, vn) utts extra = do
+initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (ap, ax, an) uttMb extra = do
     prog' <- initProgram log vShaderSrc fShaderSrc
     let unif' str  = wrapGL log ("uniformLocation " <> str) . STV.get $ uniformLocation prog' str
         att' str   = wrapGL log ("attribLocation "  <> str) . STV.get $ attribLocation  prog' str
@@ -156,13 +159,15 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (vp, vc, vn) utts 
         vac = undefined
         vdc = undefined
         vsc = undefined
-    let vertexDataC' = VertexDataC <$> att' vp <*> att' vc <*> att' vn
-        vertexDataT' = VertexDataT <$> att' vp <*> att' vc <*> att' vn <*> unif' (head utts)
-        vertexDataM' = VertexDataM <$> att' vp <*> att' vc <*> att' vn
+    -- note that matrix uniforms (mvp) are taken as a given, so not part of
+    -- VertexDataX.
+    let vertexDataC' = VertexDataC <$> att' ap <*> att' ax <*> att' an
+        vertexDataT' = VertexDataT <$> att' ap <*> att' ax <*> att' an <*> unif' (fromJust uttMb)
+        vertexDataM' = VertexDataM <$> att' ap <*> att' ax <*> att' an
                                    <*> att' vse <*> att' vac <*> att' vdc <*> att' vsc
-                                   <*> unif' ((!! 0) utts)
-                                   <*> unif' ((!! 1) utts)
-                                   <*> unif' ((!! 2) utts)
+                                   <*> unif' undefined
+                                   <*> unif' undefined
+                                   <*> unif' undefined
         vertexData' = case shaderType of "t" -> vertexDataT'
                                          "c" -> vertexDataC'
                                          "m" -> vertexDataM'

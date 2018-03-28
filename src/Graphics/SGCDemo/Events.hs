@@ -36,12 +36,12 @@ import           Linear ( V2 (..)
                         , _x, _y )
 
 import           Graphics.SGCDemo.Types ( Log (info, warn, err) )
-import           Graphics.SGCDemo.Util ( (<|.>), allPass )
+import           Graphics.SGCDemo.Util ( (<|.>), allPass, inv )
 
 doDebug = False
 
 touchScaleAmount = 200
-pinchScaleAmount = 1 / 10.0
+pinchScaleAmount = 1
 
 processEvents log ( viewportWidth, viewportHeight )= do
     events <- pollEvents
@@ -92,7 +92,10 @@ getEventPinch = get' . find find' . map eventPayload where
     get' (Just (MultiGestureEvent mgevd)) = get'' ( multiGestureEventDDist mgevd )
     get' Nothing = empty
     get'' = pure . normTouch' -- CFloat
-    normTouch' = floor . (* pinchScaleAmount)
+    normTouch' = clamp' . floor . (/ pinchScaleAmount)
+    clamp' x
+      | x < 0  = min x (inv 1)
+      | x >= 0 = max x 1
 
 getEventWheelOrPinch :: [Event] -> Maybe Int
 getEventWheelOrPinch = getEventWheel <|.> getEventPinch
