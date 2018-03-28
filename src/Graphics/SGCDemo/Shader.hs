@@ -11,7 +11,7 @@ module Graphics.SGCDemo.Shader ( uniform
                                , activateTexture
                                , useShaderM ) where
 
-import           Prelude hiding ( log )
+import           Prelude hiding ( log, tan )
 
 import           Text.Printf ( printf )
 import           Data.Maybe ( isNothing, isJust, fromJust )
@@ -129,24 +129,33 @@ initProgram log vShaderSrc fShaderSrc = do
     info'' =<< STV.get (programInfoLog prog)
     pure prog
 
--- consider passing utt as an 'extra'.
+data InitShader = InitShaderColor String String String
+                | InitShaderTexture String String String String
+                | InitShaderMesh String String String String String String String String String String
 
 initShaderColor log vShaderSrc fShaderSrc mvp (ap, ac, an) extra = do
-    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp (ap, ac, an) Nothing extra
+    let locs' = InitShaderColor ap ac an
+    shader' <- initShader' log "c" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderC shader'
 
 initShaderTextureFaces log vShaderSrc fShaderSrc mvp (ap, atc, an, utt) extra = do
-    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp (ap, atc, an) (Just utt) extra
+    let locs' = InitShaderTexture ap atc an utt
+    shader' <- initShader' log "t" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderT shader'
 
-initShaderMesh log vShaderSrc fShaderSrc mvp (ap, ac, an, utt) extra = do
-    -- let uas = undefined uss = undefined
-    shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp (ap, ac, an) (Just utt) extra
+initShaderMesh log vShaderSrc fShaderSrc mvp (ap, ac, an, ase, aac, adc, asc, utt, uas, uss) extra = do
+    let locs' = InitShaderMesh ap ac an ase aac adc asc utt uas uss
+    shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderM shader'
 
 -- extra: Maybe (uniforms, atts)
--- UUU
-initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (ap, ax, an) uttMb extra = do
+-- utt and others like it could technically be 'extras', but we have more
+-- safety this way.
+-- 'extras' are less essential things like 'doVaryOpacity'
+-- note that matrix uniforms (mvp) are taken as a given, so not part of
+-- VertexDataX.
+
+initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
     prog' <- initProgram log vShaderSrc fShaderSrc
     let unif' str  = wrapGL log ("uniformLocation " <> str) . STV.get $ uniformLocation prog' str
         att' str   = wrapGL log ("attribLocation "  <> str) . STV.get $ attribLocation  prog' str
@@ -155,19 +164,14 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) (ap, ax, an) uttMb
         extra' Nothing = pure Nothing
         extra' (Just (extraU, extraA)) = Just <$> extra'' (mapM unif' extraU) (mapM att' extraA)
         extra'' u' a' = (,) <$> u' <*> a'
-    let vse = undefined
-        vac = undefined
-        vdc = undefined
-        vsc = undefined
-    -- note that matrix uniforms (mvp) are taken as a given, so not part of
-    -- VertexDataX.
-    let vertexDataC' = VertexDataC <$> att' ap <*> att' ax <*> att' an
-        vertexDataT' = VertexDataT <$> att' ap <*> att' ax <*> att' an <*> unif' (fromJust uttMb)
-        vertexDataM' = VertexDataM <$> att' ap <*> att' ax <*> att' an
-                                   <*> att' vse <*> att' vac <*> att' vdc <*> att' vsc
-                                   <*> unif' undefined
-                                   <*> unif' undefined
-                                   <*> unif' undefined
+    let InitShaderColor cap cac can = locs
+        InitShaderTexture tap tatc tan tutt = locs
+        InitShaderMesh map' mac man mase maac madc masc mutt muas muss = locs
+    let vertexDataC' = VertexDataC <$> att' cap   <*> att' cac   <*> att' can
+        vertexDataT' = VertexDataT <$> att' tap   <*> att' tatc  <*> att' tan  <*> unif' tutt
+        vertexDataM' = VertexDataM <$> att' map'  <*> att' mac   <*> att' man
+                                   <*> att' mase  <*> att' maac  <*> att' madc <*> att' masc
+                                   <*> unif' mutt <*> unif' muas <*> unif' muss
         vertexData' = case shaderType of "t" -> vertexDataT'
                                          "c" -> vertexDataC'
                                          "m" -> vertexDataM'
@@ -492,8 +496,8 @@ getShaderInlineFragmentMesh =
     "#endif\n" <>
     "\n" <>
     "uniform sampler2D texture;\n" <>
-    "uniform float u_ambientStrength;\n" <>
-    "uniform float u_specularStrength;\n" <>
+    "uniform float ambientStrength;\n" <>
+    "uniform float specularStrength;\n" <>
     "\n" <>
     "varying vec4 v_position;\n" <>
     "varying vec2 v_texcoord;\n" <>
@@ -517,8 +521,8 @@ getShaderInlineFragmentMesh =
     "};\n" <>
     "\n" <>
     "light l0 = light (\n" <>
-    "    u_ambientStrength,\n" <>
-    "    u_specularStrength,\n" <>
+    "    ambientStrength,\n" <>
+    "    specularStrength,\n" <>
     "    v_specularExp,\n" <>
     "    v_ambientColor,\n" <>
     "    v_diffuseColor,\n" <>

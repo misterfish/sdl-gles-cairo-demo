@@ -5,7 +5,7 @@
 faceSpec: eightpics
 
 doWolf: true
-wolfFrames: 1
+wolfFrames: all
 doInitRotate: true
 doCube: true
 doCarrousel: false

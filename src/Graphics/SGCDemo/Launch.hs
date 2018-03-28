@@ -1565,16 +1565,22 @@ initShaders log = do
       , vShaderTextureFaces, fShaderTextureFaces
       , vShaderMesh, fShaderMesh ) <- getShaders
 
-    let colorShader   = initShaderColor log vShaderColor fShaderColor mvp1 v1 Nothing
-        mvp1 = ("model", "view", "projection")
+    let mvp = ("model", "view", "projection")
+        colorShader   = initShaderColor log vShaderColor fShaderColor mvp v1 Nothing
         v1 = ("a_position", "a_color", "a_normal")
 
-        texFacesShader = initShaderTextureFaces log vShaderTextureFaces fShaderTextureFaces mvp2 v2 extra2
-        mvp2 = ("model", "view", "projection")
+        texFacesShader = initShaderTextureFaces log vShaderTextureFaces fShaderTextureFaces mvp v2 extra2
         v2 = ("a_position", "a_texcoord", "a_normal", "texture")
-        extra2 = Just (["texture", "transpose_inverse_model", "do_vary_opacity"], [])
 
-        meshShader = undefined
+        -- weird, how did this ever work??
+        -- extra2 = Just (["texture", "transpose_inverse_model", "do_vary_opacity"], [])
+        extra2 = Just (["transpose_inverse_model", "do_vary_opacity"], [])
+
+        meshShader = initShaderMesh log vShaderMesh fShaderMesh mvp v3 extra3
+        v3 = ( "a_position", "a_texcoord", "a_normal"
+             , "a_specularExp", "a_ambientColor", "a_diffuseColor", "a_specularColor"
+             , "texture", "ambientStrength", "specularStrength" )
+        extra3 = Just (["transpose_inverse_model"], [])
 
     -- (,,) <$> colorShader <*> texFacesShader <*> meshShader
     (,) <$> colorShader <*> texFacesShader

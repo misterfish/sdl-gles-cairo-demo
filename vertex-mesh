@@ -1,6 +1,8 @@
 #version 100
 // ES 2.0 requires 100 or 300, which are the ES versions.
 
+// To use this shader, each mesh must have a texture.
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;

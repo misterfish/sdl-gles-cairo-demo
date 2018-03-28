@@ -4,8 +4,8 @@ precision mediump float;
 #endif
 
 uniform sampler2D texture;
-uniform float u_ambientStrength;
-uniform float u_specularStrength;
+uniform float ambientStrength;
+uniform float specularStrength;
 
 varying vec4 v_position;
 varying vec2 v_texcoord;
@@ -29,8 +29,8 @@ struct light {
 };
 
 light l0 = light (
-    u_ambientStrength,
-    u_specularStrength,
+    ambientStrength,
+    specularStrength,
     v_specularExp,
     v_ambientColor,
     v_diffuseColor,
