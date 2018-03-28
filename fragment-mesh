@@ -54,10 +54,8 @@ vec4 get_lighting (vec4 viewDir, vec4 norm, light l)
 void main()
 {
     light l = light (
-        // ambientStrength,
-        // specularStrength,
-        0.1,
-        10.0,
+        ambientStrength,
+        specularStrength,
         v_specularExp,
         v_ambientColor,
         v_diffuseColor,
@@ -72,7 +70,7 @@ void main()
 
     vec4 viewDir = normalize (viewPos - v_position);
 
-    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);
+    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 0.0);
     lightTotal += get_lighting (viewDir, norm, l);
 
     gl_FragColor = init * lightTotal;

@@ -1845,13 +1845,13 @@ drawWolfBurst log appmatrix shader textureIdxMb burst = do
 
         textureMb' = Cmog.materialTexture material'
         specularExp' = Cmog.materialSpecularExp material'
-        ambientColor' = Cmog.materialAmbientColor material'
-        diffuseColor' = Cmog.materialDiffuseColor material'
-        specularColor' = Cmog.materialSpecularColor material'
+        ambientColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
+        diffuseColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
+        specularColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
-        foreignVertex3ToLocalVertex3 (Cmog.Vertex3 a b c) = Vertex3 a b c
-        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b) = Vertex4 a b c d
-        foreignVertex3ToLocalVertex4 d (Cmog.Vertex3 a b c) = Vertex4 a b c d
+        foreignVertex3ToLocalVertex3     (Cmog.Vertex3 a b c) = Vertex3 a b c
+        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b)   = Vertex4 a b c d
+        foreignVertex3ToLocalVertex4 d   (Cmog.Vertex3 a b c) = Vertex4 a b c d
 
         wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
 
@@ -1876,10 +1876,11 @@ drawWolfBurst log appmatrix shader textureIdxMb burst = do
     tcPtr <- pushTexCoords log atc wolfTexCoords'
     nPtr <- pushNormals log an wolfNormals'
 
+    info log $ printf "am col %s" (show ambientColor')
     -- xxx
-    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ Vertex4 0.0 0.0 1.0 1.0
-    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ Vertex4 1.0 1.0 0.0 1.0
-    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ Vertex4 1.0 0.0 0.0 1.0
+    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
+    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
+    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
     sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ 10.0
 
     attrib log "ap" ap Enabled
