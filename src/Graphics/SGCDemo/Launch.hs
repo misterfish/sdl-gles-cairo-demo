@@ -170,8 +170,8 @@ import           Data.Stack ( Stack, stackNew, stackPush, stackPop )
 import           Control.Conditional ( ifM )
 
 -- Doesn't compile on Android.
-import           System.FilePath.Glob as Sfg ( globDir1 )
-import qualified System.FilePath.Glob as Sfg ( compile )
+-- import           System.FilePath.Glob as Sfg ( globDir1 )
+-- import qualified System.FilePath.Glob as Sfg ( compile )
 
 import "matrix"  Data.Matrix        as DMX ( (!)
                                            , Matrix
@@ -300,7 +300,6 @@ import           Graphics.Rendering.OpenGL as GL
                  , bindVertexArrayObject
                  , polygonMode
                  , cullFace
-                 , matrix
                  , drawArrays
                  , flush
                  , arrayPointer
@@ -309,12 +308,6 @@ import           Graphics.Rendering.OpenGL as GL
                  , multMatrix
                  , matrixMode
                  , getMatrixComponents
-                 , translate
-                 , rotate
-                 , scale
-                 , perspective
-                 , clientState
-                 , bindBuffer
                  , genObjectNames
                  , vertexAttribPointer
                  , bufferData
@@ -338,16 +331,8 @@ import           Graphics.Rendering.OpenGL as GL
                  , lightModelAmbient
                  , lightModelLocalViewer
                  , lightModelTwoSide
-                 , specular
-                 , ambient
-                 , normal
-                 , diffuse
-                 , specular
-                 , light
-                 , autoNormal
                  , blendFunc
                  , blend
-                 , translate
                  , textureGenMode
                  , textureWrapMode
                  , textureLevelRange
@@ -357,13 +342,7 @@ import           Graphics.Rendering.OpenGL as GL
                  , depthFunc
                  , shadeModel
                  , renderPrimitive
-                 , loadIdentity
-                 , matrixMode
-                 , frustum
-                 , lookAt
                  , clearDepth
-                 , withMatrix
-                 , withNewMatrix
                  , rect
                  , clearColor )
 
@@ -596,6 +575,7 @@ import           Graphics.SGCDemo.WolfObj ( wolfObj )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
+                                        , ConfigWolfFrames (ConfigWolfFramesStr, ConfigWolfFramesNum)
                                         , Bubble (Bubble)
                                         , Log (Log, info, warn, err)
                                         , Logger
@@ -621,6 +601,8 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , configDoTransformTest
                                         , configDoLinesTest
                                         , configDoShadersTest
+                                        , configDoStars
+                                        , configWolfFrames
                                         , texWidth
                                         , texHeight
                                         , isFlipping
@@ -719,6 +701,8 @@ faceSpec log args rands = do
     info log $ "Please wait . . . (parsing face specs, this will take a while)"
     catFrames <- concat . repeat <$> SCC.renderFrames False
 
+    -- xxx, don't do unnecessary work (check arg early)
+
     let g1 = GraphicsSingle (decodeImage' imageNefeli) True
         g2 = GraphicsSingle (decodeImage' imageNeske) True
         g3' = map decodeImage' movieMock
@@ -814,7 +798,7 @@ faceSpec log args rands = do
              | arg == "eightmovies"   =  faceSpecEightMovies
              | arg == "wolf"          =  faceSpecWolf
              | arg == "viking"        =  faceSpecViking
-             | otherwise              =  faceSpecSimple3
+             | otherwise              =  faceSpecViking
 
     pure spec
 
@@ -863,12 +847,18 @@ launch_ (androidLog, androidWarn, androidError) args = do
     checkSDLError' "createWindow"
     debug' "created window"
 
-    configYaml <- BS.readFile "config.yaml"
+    configYaml <- if isEmbedded then pure configYamlInline
+                                else BS.readFile "config.yaml"
     let config :: Config
         config = do  let  error' = error "Couldn't decode config.yaml"
                      maybe error' id $ Y.decode configYaml
 
-    let doWolf = config & configDoWolf
+    let doWolf        = config & configDoWolf
+        numWolfFrames = config & configWolfFrames
+        numWolfFrames'
+          | ConfigWolfFramesNum n     <- numWolfFrames = take n
+          | ConfigWolfFramesStr "all" <- numWolfFrames = id
+          | ConfigWolfFramesStr s     <- numWolfFrames = error $ printf "Invalid string value for number of wolf frames (%s)" s
 
     rands <- randoms
     (wolfSpec', wolfSeqMb') <-
@@ -876,10 +866,11 @@ launch_ (androidLog, androidWarn, androidError) args = do
                           textureConfigYaml' <- textureConfigYaml bodyPng64 eyesPng64 furPng64
                           (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml'
                           let Cmog.Sequence wolfSeqFrames' = wolfSeq'
+                              wolfSeq'' = Cmog.Sequence . numWolfFrames' $ wolfSeqFrames'
                           debug' "forcing"
-                          spec' <- deepseq wolfSeq' $ wolfSpec wolfTextureMap'
+                          spec' <- deepseq wolfSeq'' $ wolfSpec wolfTextureMap'
                           debug' "done forcing"
-                          pure (spec', Just wolfSeq')
+                          pure (spec', Just wolfSeq'')
                   else pure ([], Nothing)
     faceSpec' <- faceSpec log args rands
 
@@ -948,7 +939,8 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     ( qPressed, click, dragAmounts, wheelOrPinchAmount ) <- processEvents log ( viewportWidth, viewportHeight )
 
-    -- info' $ printf "wheel or pinch: %s" (show wheelOrPinchAmount)
+    info' $ printf "wheel or pinch: %s" (show wheelOrPinchAmount)
+    info' $ printf "dragAmounts: %s" (show dragAmounts)
 
     let remainingTranslateZ' = getRemainingTranslateZ app
 
@@ -984,6 +976,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
         testFlowerPot app'' colorShader      1  45
         testFlowerPot app'' colorShader (inv 1) 20
 
+    when (config & configDoStars) $ drawStars app'' (colorShader, texFacesShader) t args
     when (config & configDoShadersTest) $ testShaders log colorShader args
     when (config & configDoLinesTest)   $ testLineStroke app'' colorShader args
     when (config & configDoCarrousel) $ coneSectionTest app'' (colorShader, texFacesShader) texMapsCube' t args
@@ -1541,7 +1534,7 @@ advanceBubble rands (Just bubble) = do
 depthRange :: (Float, Float) -> IO ()
 depthRange = uncurry glDepthRangef
 
-getOrder m = withMatrix m $ \order _ -> pure order
+-- getOrder m = withMatrix m $ \order _ -> pure order
 
 -- not possible with GLES.
 -- also, supposedly really bad for performance: forces pipeline flush.
@@ -1815,16 +1808,9 @@ textureConfigYaml bodyPng eyesPng furPng = pure $
 
 initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
---     let framesDir' = "/home/fritz/de/src/fish/mesh-obj-gles/example/wolf/frames-wait/"
---         objFilenameGlob = "wolf*.obj"
     let mtlSrc' = wolfMtl
-    -- DtextIO.writeFile "/tmp/allen" . head $ wolfObj
-
-    -- objFilenames' <- sort <$> globDir1 (Sfg.compile objFilenameGlob) framesDir'
-    -- objSources' <- map Cmog.ConfigObjectSource <$> mapM DtextIO.readFile objFilenames'
     let objSources' = map Cmog.ConfigObjectSource wolfObj
     let wolfConfig = Cmog.Config
-            -- (Cmog.ConfigObjectSpec $ map Cmog.ConfigObjectFilePath objFilenames')
             (Cmog.ConfigObjectSpec objSources')
             (Cmog.ConfigMtlSource mtlSrc')
             configYaml
@@ -1929,8 +1915,9 @@ drawWolfBurst log appmatrix texFacesShader textureIdxMb burst = do
     attrib log "vn" vn Disabled
     attrib log "vt" vt Disabled
     attrib log "vp" vp Disabled
-    free vPtr
+    free nPtr
     free tcPtr
+    free vPtr
 
 unvertex3 (Vertex3 x y z) = (x, y, z)
 unvertex4 (Vertex4 x y z w) = (x, y, z, w)
@@ -1949,3 +1936,81 @@ values :: Dmap.Map k v -> [v]
 values = map snd . Dmap.toList
 
 fs `asterisk` x = map map' fs where map' f = f x
+
+configYamlInline :: ByteString
+configYamlInline =
+    "doWolf: true\n" <>
+    "wolfFrames: 1\n" <>
+    "doInitRotate: true\n" <>
+    "doBorders: true\n" <>
+    "doCube: true\n" <>
+    "doCylinder: false\n" <>
+    "doCarrousel: false\n" <>
+    "doStars: true\n" <>
+    "doTorus: false\n" <>
+    "doBackground: false\n" <>
+    "doLinesTest: false\n" <>
+    "doShadersTest: false\n" <>
+    "doTransformTest: false\n"
+
+drawStars app (shaderC, shaderT) t args = do
+    let star' = drawStar app (shaderC, shaderT) t args
+    -- star' 0 0.000001 1 0
+    star' 2 4 0.2 0 0 (hsvCycle 100 $ t)
+    star' 1 6 0.1 45 90 (hsvCycle 200 $ t + 30)
+    star' 1 8 0.05 (inv 45) 135 (hsvCycle 300 $ t + 50)
+    star' 1 12 0.025 (inv 45) 135 (hsvCycle 400 $ t + 70)
+    star' 1 20 0.025 (inv 45) 135 (hsvCycle 500 $ t + 90)
+    star' 1 40 0.025 90 180 (hsvCycle 600 $ t + 120)
+
+drawStar app (shaderC, shaderT) t args r velocity scale tilt initAngle hsv = drawStar' app' (shaderC, shaderT) hsv args where
+    app'    = app & appMultiplyModel model'
+    model' = multMatrices [ translateX (r / scale)
+                          , rotateY (ry' + initAngle)
+                          , rotateZ tilt
+                          , scaleX scale
+                          , scaleY scale
+                          , scaleZ scale ]
+    period' = floor $ 360 / velocity
+    ry' = (* velocity) t'
+    t' = frint $ t `mod` period'
+
+drawStar' app (shaderC, shaderT) hsv args = do
+    let shaderC' = ShaderDC (Just progc) umc uvc upc apc acc anc
+        shaderT' = ShaderDT (Just progt) umt uvt upt utt apt att ant
+        progc         = shaderProgram shaderC
+        progt         = shaderProgram shaderT
+        (umc, uvc, upc) = shaderMatrix shaderC
+        (umt, uvt, upt) = shaderMatrix shaderT
+        VertexDataC apc acc anc = shaderVertexData shaderC
+        VertexDataT apt att ant utt = shaderVertexData shaderT
+        (cr', cg', cb') = hsv
+        col' = color cr' cg' cb' 255
+    -- sphere only accepts color shader currently.
+    drawStarSphere app shaderC' col' args
+    forM_ [1 .. 4] $ \n -> drawStarCone app shaderC' col' args n 0
+    forM_ [1, 3]   $ \m -> drawStarCone app shaderC' col' args 1 m
+
+-- not sure if the radius works right on the sphere (seems like it's
+-- diameter).
+
+drawStarSphere app shader' col args = sphere' where
+    sphere' = sphere app' shader' (slices', stacks') col r
+    app' = app
+    slices' = 20
+    stacks' = 20
+    r = 1
+
+drawStarCone app shader' col args n m = cone' where
+    ty' = inv 1.2
+    height' = 1.0
+
+    cone' = coneSection app' shader' 60 height' 0.001 0.5 0 (2 * pi) col
+    -- cone' = coneSectionTex app' shader' 60 height' 0.001 0.5 0 (2 * pi) (TextureObject 9) (undefined, undefined, undefined, undefined)
+    app'    = app & appMultiplyModel model'
+    n' = frint n
+    m' = frint m
+    model' = multMatrices [ rotateX $ 180
+                          , translateY $ ty'
+                          , rotateX $ 90 * n'
+                          , rotateY $ 90 * m' ]

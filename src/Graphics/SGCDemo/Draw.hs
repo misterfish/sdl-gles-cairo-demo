@@ -393,6 +393,7 @@ cylinder app shaderC npoints height radius angBegin angEnd colour = do
     useShaderM log mp
     coneSection' app shaderC npoints height radius radius angBegin angEnd data' Nothing
 
+-- xxx ignore tex coords
 coneSectionTex app shaderT npoints height topRadius bottomRadius angBegin angEnd texName (tx00, tx01, tx10, tx11) = do
     let log = appLog app
         ShaderDT mp _ _ _ utt av at an = shaderT
@@ -413,6 +414,7 @@ coneSection app shaderC npoints height topRadius bottomRadius angBegin angEnd co
     coneSection' app shaderC npoints height topRadius bottomRadius angBegin angEnd data' Nothing
 
 -- ~ 60 points looks alright.
+-- angles in radians.
 coneSection' app shaderD npoints height topRadius bottomRadius angBegin angEnd data' texInfo = do
     let log         = appLog app
         app'        = app & appMultiplyModel model'

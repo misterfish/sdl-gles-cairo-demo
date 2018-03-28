@@ -3,7 +3,7 @@ module Graphics.SGCDemo.Events ( processEvents ) where
 import           Prelude hiding ( log )
 
 import           Control.Applicative ( empty )
-import           Data.Maybe ( fromJust )
+import           Data.Maybe ( fromJust, isJust )
 import           Data.Foldable ( find )
 import           Foreign ( Int32 )
 import           Foreign.C ( CFloat )
@@ -40,7 +40,7 @@ import           Graphics.SGCDemo.Util ( (<|.>), allPass )
 
 doDebug = False
 
-touchScaleAmount = 100
+touchScaleAmount = 200
 pinchScaleAmount = 1 / 10.0
 
 processEvents log ( viewportWidth, viewportHeight )= do
@@ -50,6 +50,7 @@ processEvents log ( viewportWidth, viewportHeight )= do
         qPressed = any eventIsQPress events
         showEvents' [] = pure ()
         showEvents' x = debug' $ "polled events: " <> show x
+        dragAmounts :: Maybe (Int, Int)
         dragAmounts = getEventDrag events
         wheelOrPinchAmount = getEventWheelOrPinch events
         click = getEventClick ( viewportWidth, viewportHeight ) events
@@ -58,7 +59,9 @@ processEvents log ( viewportWidth, viewportHeight )= do
         click' (Just (x, y)) = printf "[click] x: %s, y: %s" (show . fromJust $ clickX) (show . fromJust $ clickY)
     showEvents' events
 
-    pure ( qPressed, click, dragAmounts, wheelOrPinchAmount )
+    pure ( qPressed, click
+         , if isJust wheelOrPinchAmount then Nothing else dragAmounts
+         , wheelOrPinchAmount )
 
 getEventClick :: (Int32, Int32) -> [Event] -> Maybe (Int32, Int32)
 getEventClick ( viewportWidth, viewportHeight ) = get' . find find' . map eventPayload where

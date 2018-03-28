@@ -1,12 +1,13 @@
 doWolf: true
-doInitRotate: true
+wolfFrames: 3
+doInitRotate: false
 doBorders: true
 doCube: true
 doCylinder: false
-doCarrousel: false
+doCarrousel: true
+doStars: true
 doTorus: false
 doBackground: false
 doLinesTest: false
 doShadersTest: false
 doTransformTest: false
-
