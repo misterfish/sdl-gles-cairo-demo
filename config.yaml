@@ -2,10 +2,11 @@
 # faceSpec: twocats
 # faceSpec: onemovie
 # faceSpec: vikingplaza
-faceSpec: eightpics
+# faceSpec: eightpics
+faceSpec: wolf
 
 doWolf: true
-wolfFrames: 3
+wolfFrames: 10
 doInitRotate: true
 doCube: true
 doCarrousel: false

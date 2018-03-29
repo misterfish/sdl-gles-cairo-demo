@@ -15,6 +15,8 @@ module Graphics.SGCDemo.Config ( useGLES
                                , output565
                                , colorProfile32
                                , mvpConfig
+                               , wolfAmbientStrength
+                               , wolfSpecularStrength
                                , aspectRatio ) where
 
 import           Foreign.C.Types ( CInt )
@@ -63,3 +65,5 @@ mvpConfigF = MVPConfig ProjectionFrustum (- 3) 1.9
 mvpConfigO = MVPConfig ProjectionOrtho (- 2) 1
 mvpConfig = mvpConfigF
 
+wolfAmbientStrength = 1.0 :: Float
+wolfSpecularStrength = 10.0 :: Float

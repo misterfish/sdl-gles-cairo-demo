@@ -312,6 +312,7 @@ pushAttributesVertex4 log tag attribLocation verts = do
 
 -- algorithm from StackOverflow.
 -- color-specific, no texture mapping.
+-- is radius actually diameter? xxx
 
 sphere :: App -> ShaderD -> (Int, Int) -> Vertex4 Float -> Float -> IO ()
 sphere app shader (slices, stacks) colour r = do

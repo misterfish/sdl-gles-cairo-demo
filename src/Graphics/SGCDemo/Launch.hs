@@ -344,6 +344,8 @@ import           Graphics.Rendering.OpenGL as GL
                  , renderPrimitive
                  , clearDepth
                  , rect
+                 , maxCombinedTextureImageUnits
+                 , maxTextureImageUnits
                  , clearColor )
 
 import qualified Graphics.Rendering.OpenGL as GL
@@ -569,7 +571,9 @@ import           Graphics.SGCDemo.Config ( doDebug
                                          , useGLES
                                          , openGLESVer
                                          , mvpConfig
-                                         , output565 )
+                                         , output565
+                                         , wolfAmbientStrength
+                                         , wolfSpecularStrength )
 
 import           Graphics.SGCDemo.CubeFaces ( drawCubeFaces )
 
@@ -702,6 +706,9 @@ sphereColor = color 0 57 73 255
     if output565 then (newTex8888_565WithCairo, newTex565)
                  else (newTex8888WithCairo, newTex8888NoCairo)
 
+-- @demo load 8 separate textures, even if several faces show the same
+-- image.
+-- it is possible to reuse them, though.
 faceSpec log config rands = do
 
     info log $ "Please wait . . . (parsing face specs, this will take a while)"
@@ -721,6 +728,8 @@ faceSpec log config rands = do
     img6' <- decode imagePlaza2
     img7' <- decode imagePlaza3
     img8' <- decode imagePlaza4
+
+    imtTest' <- decode imageWolf
 
     let g1 = GraphicsSingle img1' True
         g2 = GraphicsSingle img2' True
@@ -765,7 +774,7 @@ faceSpec log config rands = do
         t1 = tnc_512_1
         t2 = tnc_512_1
         tmovie = tnc_512_1
-        twolf = tnc_512_1
+    twolf <- noCairo 512 256
 
     -- outer / inner
     let faceSpecExtreme      = [ (tcat, gcat), (t2, g2), (tmovie, gmovie), (t1, g1)
@@ -798,19 +807,20 @@ faceSpec log config rands = do
     let faceSpecEightBubbles = [ (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6)
                                , (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6), (twc_512_1, g6) ]
 
-    let faceSpecWolf         = [ (twolf, gwolf), (t1, g1), (t1, g1), (t1, g1)
-                               , (t2, g2), (t2, g2), (t2, g2), (t2, g2) ]
-
     let faceSpecViking       = [ (tnc_256_1, gviking), (tnc_256_1, gviking), (tnc_256_1, gviking), (tnc_256_1, gviking)
                                , (tnc_256_1, gplaza1), (tnc_256_1, gplaza3), (tnc_256_1, gplaza4), (tnc_256_1, gplaza2) ]
 
     let faceSpecEightPics    = [ (tharlem, gharlem), (tshigeru, gshigeru), (tfence, gfence), (tlondon, glondon)
                                , (tnc_256_1, gplaza1), (tnc_256_1, gplaza3), (tnc_256_1, gplaza4), (tnc_256_1, gplaza2) ]
 
+    let faceSpecWolf         = [ (tharlem, gharlem), (tshigeru, gshigeru), (tfence, gfence), (tlondon, glondon)
+                               , (tnc_256_1, gplaza1), (tnc_256_1, gplaza3), (tnc_256_1, gplaza4), (twolf, gwolf) ]
+
     let faceSpec' = config & configFaceSpec
 
     let spec | faceSpec' == "extreme"       =  pure faceSpecExtreme
              | faceSpec' == "simple"        =  pure faceSpecSimple
+             | faceSpec' == "wolf"          =  pure faceSpecWolf
              | faceSpec' == "onecat"        =  pure faceSpecOneCat
              | faceSpec' == "twocats"       =  pure faceSpecTwoCats
              | faceSpec' == "fourcats"      =  pure faceSpecFourCats
@@ -819,7 +829,6 @@ faceSpec log config rands = do
              | faceSpec' == "onemovie"      =  pure faceSpecOneMovie
              | faceSpec' == "nomovie"       =  pure faceSpecNoMovie
              | faceSpec' == "eightmovies"   =  pure faceSpecEightMovies
-             | faceSpec' == "wolf"          =  pure faceSpecWolf
              | faceSpec' == "vikingplaza"   =  pure faceSpecViking
              | faceSpec' == "eightpics"     =  pure faceSpecEightPics
              | otherwise                    =  die log $ printf "Unknown value for faceSpec: %s" faceSpec'
@@ -832,6 +841,7 @@ wolfSpec log textureMap = wolfSpecGraphicsDecode log textures' where
     textures' = map tex' textureConfigs'
     textureConfigs' = values textureMap
 
+wolfSpecGraphicsDecode :: Log -> [(Int, Int, ByteString)] -> IO [(Tex, GraphicsData)]
 wolfSpecGraphicsDecode log spec = do
     let w   =  fst3
         h   =  snd3
@@ -910,6 +920,12 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     texNames <- initGL log window (numCubeTextures + numWolfTextures) args
     let (texNamesCube, texNamesWolf) = splitAt numCubeTextures texNames
+
+    -- on my device, only 8 for both.
+    thing1 <- STV.get maxCombinedTextureImageUnits
+    thing2 <- STV.get maxTextureImageUnits
+    info' $ printf "num combined texture units: %s" (show thing1)
+    info' $ printf "max texture image units: %s" (show thing2)
 
     debug' "initShaders"
     (colorShader, texFacesShader, meshShader) <- initShaders log
@@ -1009,13 +1025,14 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
 
     when (config & configDoStars)     $ drawStars app'' (colorShader, texFacesShader) t args
     when (config & configDoCarrousel) $ carrousel app'' (colorShader, texFacesShader) texMapsCube' t args
+    -- before the cube.
+    when (config & configDoWolf)      $ do
+        let wolfSeq = fromJust wolfSeqMb
+        drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
     when (config & configDoTorus)     $ torusTest app'' (colorShader, texFacesShader) texMapsCube' t args
-    when (config & configDoWolf)      $ do
-        let wolfSeq = fromJust wolfSeqMb
-        drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
 
     wrapGL log "swap window" $ glSwapWindow window
 
@@ -1035,8 +1052,8 @@ initGL log window numTextures args = do
     -- intuitive view: block greater depth points with lesser depth ones.
     wrapGL log "depthFunc"    $ depthFunc                $= Just Less
 
-    when (not useGLES) . wrapGL log "shade model"        $ shadeModel      $= shadeModel'
-    when (not useGLES) . wrapGL log "texture function"   $ textureFunction $= textureFunction'
+    -- when (not useGLES) . wrapGL log "shade model"        $ shadeModel      $= shadeModel'
+    -- when (not useGLES) . wrapGL log "texture function"   $ textureFunction $= textureFunction'
 
     wrapGL log "enable blend" $ blend                                      $= Enabled
     wrapGL log "blendfunc"    $ blendFunc                                  $= blendFunc'
@@ -1746,27 +1763,24 @@ getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
 -- Ke: emissive texture map
 -- • quasiquotes don't seem to work in the cross-compiler (needs external
 -- interpreter), but why did it work in the Mesh module?)
+-- • the furPng is an alpha map and doesn't really work as a texture.
 textureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
 textureConfigYaml bodyPng eyesPng furPng = pure $
     "textures:\n" <>
     "  - materialName: Material\n" <>
     "    imageBase64: " <> bodyPng <> "\n" <>
-    "    width: 4096\n" <>
-    "    height: 2048\n" <>
+--     "    width: 4096\n" <>
+--     "    height: 2048\n" <>
+    "    width: 512\n" <>
+    "    height: 256\n" <>
     "  - materialName: eyes\n" <>
     "    imageBase64: " <> eyesPng <> "\n" <>
     "    width: 256\n" <>
     "    height: 256\n" <>
     "  - materialName: fur\n" <>
-
-    "    # image: fur.png.base64\n" <>
-    "    # width: 256\n" <>
-    "    # height: 256\n" <>
-    "    # image: body.png.base64\n" <>
-
     "    imageBase64: " <> bodyPng <> "\n" <>
-    "    width: 4096\n" <>
-    "    height: 2048\n"
+    "    width: 512\n" <>
+    "    height: 256\n"
 
 initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
 initWolf configYaml = do
@@ -1830,12 +1844,15 @@ drawWolf app wolfSeq shader texMaps flipper t args = do
     uniform log "model" um =<< toMGC model
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
-    -- uniform log "udvot" udvot glFalseF
 
     -- @demo just the first n bursts (enough to paint something
     -- wolf-like); also, texture indices are hardcoded.
-    mapM_ (draw' $ Just 9)  . take 4          $ bursts'
-    mapM_ (draw' $ Just 11) . take 1 . drop 4 $ bursts'
+    let (tex1, tex2) | isEmbedded = (8, 8)
+                     | otherwise = (9, 11)
+        (numBursts1, numBursts2) = (4, 1)
+
+    mapM_ (draw' $ Just tex1) . take numBursts1                   $ bursts'
+    mapM_ (draw' $ Just tex2) . take numBursts2 . drop numBursts1 $ bursts'
 
 -- @demo textureIdx is a kludge -- should figure out dynamically.
 drawWolfBurst log appmatrix shader textureIdxMb burst = do
@@ -1843,14 +1860,14 @@ drawWolfBurst log appmatrix shader textureIdxMb burst = do
 
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
-        textureMb' = Cmog.materialTexture material'
-        specularExp' = Cmog.materialSpecularExp material'
-        ambientColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
-        diffuseColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
+        textureMb'     = Cmog.materialTexture material'
+        specularExp'   = Cmog.materialSpecularExp material'
+        ambientColor'  = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
+        diffuseColor'  = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
         specularColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
         foreignVertex3ToLocalVertex3     (Cmog.Vertex3 a b c) = Vertex3 a b c
-        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b)   = Vertex4 a b c d
+        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b  ) = Vertex4 a b c d
         foreignVertex3ToLocalVertex4 d   (Cmog.Vertex3 a b c) = Vertex4 a b c d
 
         wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
@@ -1860,28 +1877,25 @@ drawWolfBurst log appmatrix shader textureIdxMb burst = do
 
         wolfTexCoords' :: [Vertex4 Float]
         wolfTexCoords' = maybe none' toTexCoordsMb texCoordsMb'
-        wolfNormals' :: [Vertex4 Float]
-        wolfNormals' = maybe none' toNormalsMb normalsMb'
+        wolfNormals'   :: [Vertex4 Float]
+        wolfNormals'   = maybe none' toNormalsMb normalsMb'
 
         none' = []
         len' = length wolfVert'
 
     activateTextureMaybe log utt textureIdxMb
 
-    -- xxx
-    uniform log "ambient strength" uas (1.0 :: Float)
-    uniform log "specular strength" uss (10.0 :: Float)
+    uniform log "ambient strength" uas wolfAmbientStrength
+    uniform log "specular strength" uss wolfSpecularStrength
 
     vPtr <- pushPositions log ap wolfVert'
     tcPtr <- pushTexCoords log atc wolfTexCoords'
     nPtr <- pushNormals log an wolfNormals'
 
-    info log $ printf "am col %s" (show ambientColor')
-    -- xxx
     dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
     acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
     scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
-    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ 10.0
+    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ specularExp'
 
     attrib log "ap" ap Enabled
     attrib log "atc" atc Enabled
@@ -1926,13 +1940,13 @@ fs `asterisk` x = map map' fs where map' f = f x
 
 configYamlInline :: ByteString
 configYamlInline =
-    "faceSpec: simple\n" <>
-    "doWolf: false\n" <>
-    "wolfFrames: 3\n" <>
+    "faceSpec: wolf\n" <>
+    "doWolf: true\n" <>
+    "wolfFrames: 10\n" <>
     "doInitRotate: true\n" <>
     "doCube: true\n" <>
     "doCarrousel: false\n" <>
-    "doStars: true\n" <>
+    "doStars: false\n" <>
     "doTorus: false\n" <>
     "doBackground: false\n" <>
     "doTransformTest: false\n"
@@ -1963,36 +1977,34 @@ drawStar app (shaderC, shaderT) t args r velocity scale tilt initAngle hsv = dra
 drawStar' app (shaderC, shaderT) hsv args = do
     let shaderC' = ShaderDC (Just progc) umc uvc upc apc acc anc
         shaderT' = ShaderDT (Just progt) umt uvt upt utt apt att ant
-        progc         = shaderProgram shaderC
-        progt         = shaderProgram shaderT
+        progc    = shaderProgram shaderC
+        progt    = shaderProgram shaderT
+        col'     = color cr' cg' cb' 255
+        (cr', cg', cb') = hsv
         (umc, uvc, upc) = shaderMatrix shaderC
         (umt, uvt, upt) = shaderMatrix shaderT
         VertexDataC apc acc anc = shaderVertexData shaderC
         VertexDataT apt att ant utt = shaderVertexData shaderT
-        (cr', cg', cb') = hsv
-        col' = color cr' cg' cb' 255
     drawStarSphere app shaderC' col' args
     forM_ [1 .. 4] $ \n -> drawStarCone app shaderC' col' args n 0
-    forM_ [1, 3]   $ \m -> drawStarCone app shaderC' col' args 1 m
-
--- not sure if the radius works right on the sphere (seems like it's
--- diameter).
+    forM_ [1,   3] $ \m -> drawStarCone app shaderC' col' args 1 m
 
 drawStarSphere app shader' col args = sphere' where
     sphere' = sphere app' shader' (slices', stacks') col r
-    app' = app
-    slices' = 20
-    stacks' = 20
-    r = 1
+    app'    = app
+    slices' = 5
+    stacks' = 5
+    r       = 1
 
 drawStarCone app shader' col args n m = cone' where
-    ty' = inv 1.2
-    height' = 1.0
+    ty'        = inv 1.2
+    height'    = 1.0
+    numPoints' = 10
 
-    cone' = coneSection app' shader' 60 height' 0.001 0.5 0 (2 * pi) col
-    app'    = app & appMultiplyModel model'
-    n' = frint n
-    m' = frint m
+    cone'  = coneSection app' shader' numPoints' height' 0.001 0.5 0 (2 * pi) col
+    app'   = app & appMultiplyModel model'
+    n'     = frint n
+    m'     = frint m
     model' = multMatrices [ rotateX $ 180
                           , translateY $ ty'
                           , rotateX $ 90 * n'

@@ -234,27 +234,6 @@ getShaderInlineVertexColor =
     "}\n" <>
     "\n"
 
-xxxgetShaderInlineVertexTextureFaces =
-    "#version 100\n" <>
-    "uniform mat4 model;\n" <>
-    "uniform mat4 view;\n" <>
-    "uniform mat4 projection;\n" <>
-    "attribute vec4 a_position;\n" <>
-    "vec4 a_normal;\n" <>
-    "varying vec4 v_normal;\n" <>
-    "attribute vec2 a_texcoord;\n" <>
-    "varying vec2 v_texcoord;\n" <>
-    "varying vec4 v_position;\n" <>
-    "mat4 model4 = mat4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);\n" <>
-    "void main()\n" <>
-    "{\n" <>
-    "    gl_Position = projection * view * model * a_position;\n" <>
-    "    v_texcoord = a_texcoord;\n" <>
-    "    v_position = vec4(model * a_position);\n" <>
-    "    a_normal = vec4(0.0, 1.0, 0.0, 1.0);\n" <>
-    "    v_normal = mat4(model4) * a_normal;\n" <>
-    "}\n"
-
 getShaderInlineFragmentColor =
     "#version 100\n" <>
     "#ifdef GL_ES\n" <>
@@ -296,48 +275,6 @@ getShaderInlineVertexTextureFaces =
     "\n" <>
     "    // v_normal = view * transpose_inverse_model * normal;\n" <>
     "    v_normal = view * model * normal;\n" <>
-    "}\n"
-
-xxxgetShaderInlineFragmentTextureFaces =
-    "#version 100\n" <>
-    "#ifdef GL_ES\n" <>
-    "precision mediump float;\n" <>
-    "#endif\n" <>
-    "uniform sampler2D texture;\n" <>
-    "varying vec2 v_texcoord;\n" <>
-    "varying vec4 v_position;\n" <>
-    "varying vec4 v_normal;\n" <>
-    "float ambientStrength = 0.4;\n" <>
-    "float specularStrength = 0.2;\n" <>
-    "vec4 lightColor = vec4 (1.0, 0.9, 0.5, 1.0);\n" <>
-    "vec4 lightPos = vec4 (0.0, 0.0, 1.0, 1.0);\n" <>
-    "vec4 viewPos = vec4 (0.0, 0.0, 1.0, 1.0);\n" <>
-    "float fogDensity = 2.5;\n" <>
-    "float perspectiveFar = 10.0;\n" <>
-    "vec4 fogColor = vec4 (1.0, 0.3, 0.3, 1.0);\n" <>
-    "float lightOpacity = 1.0;\n" <>
-    "float finalOpacity = 0.8;\n" <>
-    "void main()\n" <>
-    "{\n" <>
-    "    vec4 init = texture2D(texture, v_texcoord);\n" <>
-    "    vec4 norm = normalize (v_normal);\n" <>
-    "    vec4 lightDir = normalize (lightPos - v_position);\n" <>
-    "    vec4 ambient = ambientStrength * lightColor;\n" <>
-    "    vec4 diffuse = max (dot (norm, lightDir), 0.0) * lightColor;\n" <>
-    "    vec4 viewDir = normalize (viewPos - v_position);\n" <>
-    "    vec4 reflectDir = reflect (-lightDir, norm);\n" <>
-    "    float spec = pow (max (dot (viewDir, reflectDir), 0.0), 32.0);\n" <>
-    "    vec4 specular = specularStrength * spec * lightColor;\n" <>
-    "    vec4 lightTotal = ambient + diffuse + specular;\n" <>
-    "    lightTotal.x *= lightOpacity;\n" <>
-    "    lightTotal.y *= lightOpacity;\n" <>
-    "    lightTotal.z *= lightOpacity;\n" <>
-    "    gl_FragColor = init * lightTotal;\n" <>
-    "    float fragZ = gl_FragCoord.z / gl_FragCoord.w;\n" <>
-    "    float fogCoord = fragZ / perspectiveFar;\n" <>
-    "    float fog = fogCoord * fogDensity;\n" <>
-    "    gl_FragColor = mix (fogColor, gl_FragColor, clamp (1.0 - fog, 0.0, 1.0));\n" <>
-    "    gl_FragColor.w = finalOpacity;\n" <>
     "}\n"
 
 getShaderInlineFragmentTextureFaces =
@@ -446,6 +383,8 @@ getShaderInlineVertexMesh =
     "#version 100\n" <>
     "// ES 2.0 requires 100 or 300, which are the ES versions.\n" <>
     "\n" <>
+    "// To use this shader, each mesh must have a texture.\n" <>
+    "\n" <>
     "uniform mat4 model;\n" <>
     "uniform mat4 view;\n" <>
     "uniform mat4 projection;\n" <>
@@ -520,19 +459,10 @@ getShaderInlineFragmentMesh =
     "    vec4 lightPos;\n" <>
     "};\n" <>
     "\n" <>
-    "light l0 = light (\n" <>
-    "    ambientStrength,\n" <>
-    "    specularStrength,\n" <>
-    "    v_specularExp,\n" <>
-    "    v_ambientColor,\n" <>
-    "    v_diffuseColor,\n" <>
-    "    v_specularColor,\n" <>
-    "    vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
-    ");\n" <>
+    "// ok to send entire struct as an arg?\n" <>
     "\n" <>
-    "vec4 get_lighting (vec4 viewDir, vec4 norm, int i)\n" <>
+    "vec4 get_lighting (vec4 viewDir, vec4 norm, light l)\n" <>
     "{\n" <>
-    "    light l = i == 0 ? l0 : l1;\n" <>
     "    vec4 lightDir = normalize (l.lightPos - v_position);\n" <>
     "    float lightProj = dot (norm, lightDir);\n" <>
     "\n" <>
@@ -554,21 +484,27 @@ getShaderInlineFragmentMesh =
     "\n" <>
     "void main()\n" <>
     "{\n" <>
-    "    vec4 init = texture2D(texture, v_texcoord);\n" <>
+    "    light l = light (\n" <>
+    "        ambientStrength,\n" <>
+    "        specularStrength,\n" <>
+    "        v_specularExp,\n" <>
+    "        v_ambientColor,\n" <>
+    "        v_diffuseColor,\n" <>
+    "        v_specularColor,\n" <>
+    "        vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
+    "    );\n" <>
+    "\n" <>
+    "    vec4 init = texture2D (texture, v_texcoord);\n" <>
     "\n" <>
     "    vec4 norm = normalize (v_normal);\n" <>
     "    norm.w = 0.0;\n" <>
     "\n" <>
     "    vec4 viewDir = normalize (viewPos - v_position);\n" <>
     "\n" <>
-    "    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 1.0);\n" <>
-    "    lightTotal += get_lighting (viewDir, norm, 0);\n" <>
+    "    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 0.0);\n" <>
+    "    lightTotal += get_lighting (viewDir, norm, l);\n" <>
     "\n" <>
     "    gl_FragColor = init * lightTotal;\n" <>
     "\n" <>
     "    gl_FragColor.w = 1.0;\n" <>
     "}\n"
-
-debug | doDebug   = info
-      | otherwise = const . const . pure $ ()
-
