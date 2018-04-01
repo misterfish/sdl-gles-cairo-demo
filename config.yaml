@@ -5,7 +5,7 @@
 # faceSpec: eightpics
 faceSpec: wolf
 
-doWolf: true
+doWolf: false
 wolfFrames: 1
 doInitRotate: true
 doCube: true

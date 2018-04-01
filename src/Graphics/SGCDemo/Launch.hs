@@ -111,7 +111,7 @@ import           Data.List ( zip4, findIndex, zip5, intercalate )
 import           Debug.Trace ( trace )
 import           Data.Function ( (&) )
 import           Data.Maybe ( isNothing, isJust, fromJust )
-import           Data.Either ( isLeft )
+import           Data.Either ( isLeft, isRight )
 import qualified Data.StateVar      as STV ( get )
 import           Data.StateVar      as STV ( makeStateVar )
 import           Data.Word ( Word8 )
@@ -423,11 +423,14 @@ import qualified Codec.MeshObjGles.Parse as Cmog ( Config (Config)
                                                  , Normals
                                                  , Vertex2 (Vertex2)
                                                  , Vertex3 (Vertex3)
+                                                 , TextureTypesSet
+                                                 , TextureType (TextureDiffuse, TextureAmbient, TextureDissolve, TextureSpecular, TextureSpecularExp, TextureEmissive)
                                                  , materialTexture
                                                  , materialSpecularExp
                                                  , materialAmbientColor
                                                  , materialDiffuseColor
                                                  , materialSpecularColor
+                                                 , materialTextureTypes
                                                  , makeInfiniteSequence
                                                  , tailSequence
                                                  , tcImageBase64
@@ -583,6 +586,8 @@ import           Graphics.SGCDemo.Wolf ( bodyPng64
                                        , eyesPng64 )
 
 import           Graphics.SGCDemo.WolfObj ( wolfObj )
+
+import qualified Graphics.SGCDemo.Forum as GsgcForum ( forumObj, forumMtl )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
@@ -835,12 +840,14 @@ faceSpec log config rands = do
 
     spec
 
+-- not wolf xxx
 wolfSpec :: Log -> Cmog.TextureMap -> IO [(Tex, GraphicsData)]
 wolfSpec log textureMap = wolfSpecGraphicsDecode log textures' where
     tex' config' = (Cmog.tcWidth config', Cmog.tcHeight config', Cmog.tcImageBase64 config')
     textures' = map tex' textureConfigs'
     textureConfigs' = values textureMap
 
+-- not wolf xxx
 wolfSpecGraphicsDecode :: Log -> [(Int, Int, ByteString)] -> IO [(Tex, GraphicsData)]
 wolfSpecGraphicsDecode log spec = do
     let w   =  fst3
@@ -887,35 +894,26 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     configYaml <- if isEmbedded then pure configYamlInline
                                 else BS.readFile "config.yaml"
+
     config <- do  let  error' = die log "Couldn't decode config.yaml"
                   maybe error' pure $ Y.decode configYaml
 
     let doWolf        = config & configDoWolf
-        numWolfFrames = config & configWolfFrames
-        getLimitFrames'
-          | ConfigWolfFramesNum n     <- numWolfFrames = pure $ take n
-          | ConfigWolfFramesStr "all" <- numWolfFrames = pure id
-          | ConfigWolfFramesStr s     <- numWolfFrames = die log $ printf "Invalid string value for number of wolf frames (%s)" s
-    limitFrames' <- getLimitFrames' :: IO ([a] -> [a])
+        doForum       = True
 
     rands <- randoms
-    (wolfSpec', wolfSeqMb') <-
-        if doWolf then do info' "Please wait . . . (parsing obj files, will take a while)"
-                          textureConfigYaml' <- textureConfigYaml bodyPng64 eyesPng64 furPng64
-                          (wolfSeq', wolfTextureMap') <- initWolf textureConfigYaml'
-                          let Cmog.Sequence wolfSeqFrames' = wolfSeq'
-                              wolfSeq'' = Cmog.Sequence . limitFrames' $ wolfSeqFrames'
-                          -- deepseq in combination with our limitFrames'
-                          -- function works correctly: it only forces the
-                          -- chunk which results from limitFrames'.
-                          debug' "forcing deepseq"
-                          spec' <- deepseq wolfSeq'' $ wolfSpec log wolfTextureMap'
-                          debug' "done forcing deepseq"
-                          pure (spec', Just wolfSeq'')
-                  else pure ([], Nothing)
+
+    let initWolf'  | not doWolf = const . const $ pure ([], Nothing)
+                   | otherwise = initWolf
+        initForum' | not doForum = const . const $ pure ([], Nothing)
+                   | otherwise = initForum
+
+    (wolfTextureSpec', wolfSeqMb') <- initWolf' config log
+    (_, forumSeqMb') <- initForum' config log
+
     faceSpec' <- faceSpec log config rands
 
-    let numWolfTextures = length wolfSpec'
+    let numWolfTextures = length wolfTextureSpec'
         numCubeTextures = length faceSpec'
 
     texNames <- initGL log window (numCubeTextures + numWolfTextures) args
@@ -935,7 +933,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
         texMapsCube = map toGraphTextMapping' $ zip texNamesCube faceSpec'
 
         texMapsWolf :: [GraphicsTextureMapping]
-        texMapsWolf = map toGraphTextMapping' $ zip texNamesWolf wolfSpec'
+        texMapsWolf = map toGraphTextMapping' $ zip texNamesWolf wolfTextureSpec'
 
     debug' $ printf "texNamesCube: %s" (show texNamesCube)
     debug' $ printf "texNamesWolf: %s" (show texNamesWolf)
@@ -962,15 +960,20 @@ launch_ (androidLog, androidWarn, androidError) args = do
                    & (appReplaceProj =<< initProjection app)
 
     debug' "starting loop"
---     do  let Cmog.Sequence frames = wolfSeq
---         info' $ printf "wolf seq length %d" (length frames)
-    appLoop config window app' (colorShader, texFacesShader, meshShader) texMaps (Cmog.makeInfiniteSequence <$> wolfSeqMb') (NotFlipping FlipUpper) 0 rands args
+    let meshes = ( Cmog.makeInfiniteSequence <$> wolfSeqMb'
+                 , Cmog.makeInfiniteSequence <$> forumSeqMb' )
 
-appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t rands args = do
+    appLoop config window app' (colorShader, texFacesShader, meshShader) texMaps meshes (NotFlipping FlipUpper) 0 rands args
+
+appLoop config window app shaders (texMapsCube, texMapsWolf) meshes flipper t rands args = do
     let log = appLog app
         info' = info log
         debug' = debug log
         dim = dimension
+
+        (wolfSeqMb', forumSeqMb') = meshes
+
+        doForum = True
 
     debug' "* looping"
 
@@ -981,18 +984,12 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
     texMapsWolf' <- updateTextures log texMapsWolf
     debug' "done updating textures"
 
-    -- let app' = app & (appReplaceView $   initView app)
-    --               & (appReplaceProj =<< initProjection app)
-
     ( qPressed, click, dragAmounts, wheelOrPinchAmount ) <- processEvents log ( viewportWidth, viewportHeight )
 
     debug' $ printf "wheel or pinch: %s" (show wheelOrPinchAmount)
     debug' $ printf "dragAmounts: %s" (show dragAmounts)
 
     let remainingTranslateZ' = getRemainingTranslateZ app
-
-    -- info' $ printf "cur translateZ %s" (show curTranslateZ)
-    -- info' $ printf "remaining translateZ %.1f" remainingTranslateZ'
 
     app' <- ifM (pure $ isJust wheelOrPinchAmount)
                 (do  let view' = translateZ dz''
@@ -1015,9 +1012,8 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
         rotateForFlipper _ = flAngleDeg flipper - flAngleDegPrev flipper
         rotationFlipper' = rotateZ . rotateForFlipper $ flipper
 
-    app'' <- do pure $ app'
-                    & appMultiplyRightModel rotationsMouse'
-                    & appMultiplyModel rotationFlipper'
+    app'' <- do pure $ app' & appMultiplyRightModel rotationsMouse'
+                            & appMultiplyModel rotationFlipper'
 
     when (config & configDoTransformTest) $ do
         testTransforms app'' colorShader      1  45
@@ -1027,8 +1023,11 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
     when (config & configDoCarrousel) $ carrousel app'' (colorShader, texFacesShader) texMapsCube' t args
     -- before the cube.
     when (config & configDoWolf)      $ do
-        let wolfSeq = fromJust wolfSeqMb
+        let wolfSeq = fromJust wolfSeqMb'
         drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
+    when (doForum) $ do
+        let forumSeq = fromJust forumSeqMb'
+        drawForum app'' forumSeq meshShader flipper t args
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
@@ -1037,8 +1036,10 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) wolfSeqMb flipper t
     wrapGL log "swap window" $ glSwapWindow window
 
     let reloop = do let flipper' = updateFlipper flipper hit
+                        meshes' = ( Cmog.tailSequence <$> wolfSeqMb'
+                                  , Cmog.tailSequence <$> forumSeqMb' )
                     threadDelayMs frameInterval
-                    appLoop config window app'' shaders (texMapsCube', texMapsWolf') (Cmog.tailSequence <$> wolfSeqMb) flipper' (t + 1) (tail rands) args
+                    appLoop config window app'' shaders (texMapsCube', texMapsWolf') meshes' flipper' (t + 1) (tail rands) args
 
     if qPressed then pure () else reloop
 
@@ -1753,19 +1754,10 @@ getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
     view' = app & appMatrix & snd3 & stackPop'
     curTranslateZ' = (DMX.!) view' (4, 3) -- row, col, 1-based
 
-
-
-
--- mappings are a little bit random and based a bit on guess-work (e.g. fur
--- (fella) for teeth).
--- Kd: diffuse texture map
--- Ka: alpha texture map
--- Ke: emissive texture map
--- • quasiquotes don't seem to work in the cross-compiler (needs external
--- interpreter), but why did it work in the Mesh module?)
--- • the furPng is an alpha map -- can it work as a texture?
-textureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
-textureConfigYaml bodyPng eyesPng furPng = pure $
+-- quasiquotes don't seem to work in the cross-compiler (needs external
+-- interpreter), but why did it work in the Mesh module?) xxx
+wolfTextureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
+wolfTextureConfigYaml bodyPng eyesPng furPng = pure $
     "textures:\n" <>
     "  - materialName: Material\n" <>
     "    imageBase64: " <> furPng <> "\n" <>
@@ -1780,16 +1772,130 @@ textureConfigYaml bodyPng eyesPng furPng = pure $
     "    width: 512\n" <>
     "    height: 256\n"
 
-initWolf :: ByteString -> IO (Cmog.Sequence, Cmog.TextureMap)
-initWolf configYaml = do
+initWolfParse :: Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
+initWolfParse textureConfigYamlMb = do
     let mtlSrc' = wolfMtl
     let objSources' = map Cmog.ConfigObjectSource wolfObj
     let wolfConfig = Cmog.Config
             (Cmog.ConfigObjectSpec objSources')
             (Cmog.ConfigMtlSource mtlSrc')
-            configYaml
+            textureConfigYamlMb
 
     Cmog.parse wolfConfig
+
+initForumParse :: Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
+initForumParse textureConfigYamlMb = do
+    let mtlSrc' = GsgcForum.forumMtl
+        objSources' = map Cmog.ConfigObjectSource GsgcForum.forumObj
+        forumPawnConfig = Cmog.Config c1 c2 c3
+        c1 = Cmog.ConfigObjectSpec objSources'
+        c2 = Cmog.ConfigMtlSource mtlSrc'
+        c3 = textureConfigYamlMb
+    Cmog.parse forumPawnConfig
+
+drawForum app forumSeq shader flipper t args = do
+    let log = appLog app
+        prog         = shaderProgram shader
+        (um, uv, up) = shaderMatrix shader
+        Cmog.Sequence frames' = forumSeq
+        -- infinite list => head is fine.
+        frame' = head frames'
+        Cmog.SequenceFrame bursts' = frame'
+        texId' = 1
+
+    useShader log prog
+
+    let (burstPawn:_) = bursts'
+    forM_ [0 .. 3] $ \n -> do
+        let _app = app & appMultiplyModel model'
+            appmatrix = appMatrix _app
+            scale' = read $ (!! 1) args :: Float
+            scaleY' = read $ (!! 2) args :: Float
+            y = read $ (!! 3) args :: Float
+            z = read $ (!! 4) args :: Float
+            tx' = inv y + z * n
+            t' = frint $ t `mod` period'
+            x = read $ head args :: Float
+            rotateVelocity' = x * (1 + n)
+            period' = floor $ 360.0 / rotateVelocity'
+            rz' = (* 0) $ (* rotateVelocity') t'
+            ry' = rz' * 2
+            rx' = rz' * 3
+            
+            model' = multMatrices [ rotateZ rz'
+                                  , rotateY ry'
+                                  , rotateX rx'
+                                  , scaleX scale'
+                                  , scaleY scaleY'
+                                  , scaleZ scale'
+                                  , translateX tx' ]
+            (model, view, proj) = map3 stackPop' appmatrix
+        uniform log "model" um =<< toMGC model
+        uniform log "view" uv =<< toMGC view
+        uniform log "proj" up =<< toMGC proj
+        drawForumPawn log shader (Just texId') burstPawn
+
+    pure ()
+
+-- duplicate xxx
+drawForumPawn log shader textureIdxMb burst = do
+    let VertexDataM ap atc an ase aac adc asc utt uas uss = shaderVertexData shader
+        Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
+        specularExp' = float 10
+        ambientColor' = ver4 0.6 0.6 0.6 1.0
+        diffuseColor' = ver4 0.6 0.6 0.6 1.0
+        specularColor' = ver4 0.6 0.6 0.6 1.0
+        vert' = map (cmogVertex3ToLocalVertex3) . DV.toList $ vertices'
+        toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
+        toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+
+        normals'   :: [Vertex4 Float]
+        normals'   = maybe none' toNormalsMb normalsMb'
+        texCoords' :: [Vertex4 Float]
+        texCoords' = maybe none' toTexCoordsMb texCoordsMb'
+        none' = []
+        len' = length vert'
+
+    uniform log "ambient strength" uas wolfAmbientStrength
+    uniform log "specular strength" uss wolfSpecularStrength
+
+    activateTextureMaybe log utt textureIdxMb
+
+    vPtr <- pushPositions log ap vert'
+    tcPtr <- pushTexCoords log atc texCoords'
+    nPtr <- pushNormals log an normals'
+
+    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
+    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
+    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
+    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ specularExp'
+
+    attrib log "ap" ap Enabled
+    attrib log "atc" atc Enabled
+    attrib log "an" an Enabled
+    attrib log "adc" adc Enabled
+    attrib log "aac" aac Enabled
+    attrib log "asc" asc Enabled
+    attrib log "ase" ase Enabled
+    wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
+    attrib log "ase" ase Disabled
+    attrib log "asc" asc Disabled
+    attrib log "aac" aac Disabled
+    attrib log "adc" adc Disabled
+    attrib log "an" an Disabled
+    attrib log "atc" atc Disabled
+    attrib log "ap" ap Disabled
+
+    free sePtr
+    free scPtr
+    free acPtr
+    free dcPtr
+    free nPtr
+    free tcPtr
+    free vPtr
+
+
+    pure ()
 
 drawWolf app wolfSeq shader texMaps flipper t args = do
     let _app = app & appMultiplyModel model'
@@ -1836,14 +1942,14 @@ drawWolf app wolfSeq shader texMaps flipper t args = do
         frame' = head frames'
         Cmog.SequenceFrame bursts' = frame'
 
-        draw' = drawWolfBurst log appmatrix shader
+        draw' = drawWolfBurst log shader
 
     useShader log prog
     uniform log "model" um =<< toMGC model
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
 
-    info log $ printf "got %d bursts" (length bursts')
+    -- info log $ printf "got %d bursts" (length bursts')
 
     -- @demo just enough to draw something wolf-like; also, texture indices
     -- are hardcoded.
@@ -1860,25 +1966,22 @@ drawWolf app wolfSeq shader texMaps flipper t args = do
     mapM_ (draw' $ Just texEyes) [burstEyes]
 
 -- @demo textureIdx is a kludge -- should figure out dynamically.
-drawWolfBurst log appmatrix shader textureIdxMb burst = do
+drawWolfBurst log shader textureIdxMb burst = do
     let VertexDataM ap atc an ase aac adc asc utt uas uss = shaderVertexData shader
 
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
         textureMb'     = Cmog.materialTexture material'
+        textureTypes'  = Cmog.materialTextureTypes material'
         specularExp'   = Cmog.materialSpecularExp material'
-        ambientColor'  = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
-        diffuseColor'  = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
-        specularColor' = foreignVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
+        ambientColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
+        diffuseColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
+        specularColor' = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
-        foreignVertex3ToLocalVertex3     (Cmog.Vertex3 a b c) = Vertex3 a b c
-        foreignVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b  ) = Vertex4 a b c d
-        foreignVertex3ToLocalVertex4 d   (Cmog.Vertex3 a b c) = Vertex4 a b c d
+        wolfVert' = map (cmogVertex3ToLocalVertex3) . DV.toList $ vertices'
 
-        wolfVert' = map (foreignVertex3ToLocalVertex3) . DV.toList $ vertices'
-
-        toTexCoordsMb = map (foreignVertex2ToLocalVertex4 0.0 1.0) . DV.toList
-        toNormalsMb = map (foreignVertex3ToLocalVertex4 1.0) . DV.toList
+        toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+        toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
 
         wolfTexCoords' :: [Vertex4 Float]
         wolfTexCoords' = maybe none' toTexCoordsMb texCoordsMb'
@@ -1887,6 +1990,10 @@ drawWolfBurst log appmatrix shader textureIdxMb burst = do
 
         none' = []
         len' = length wolfVert'
+
+    -- @demo In the future, this is where the various types of texture
+    -- mappings could be sent as fragment shader attributes.
+    -- info log $ printf "got tt: %s" (show textureTypes')
 
     activateTextureMaybe log utt textureIdxMb
 
@@ -2015,6 +2122,49 @@ drawStarCone app shader' col args n m = cone' where
                           , rotateX $ 90 * n'
                           , rotateY $ 90 * m' ]
 
+initWolf config log = do
+    let numWolfFrames = config & configWolfFrames
+        getLimitFrames'
+          | ConfigWolfFramesNum n     <- numWolfFrames = pure $ take n
+          | ConfigWolfFramesStr "all" <- numWolfFrames = pure id
+          | ConfigWolfFramesStr s     <- numWolfFrames = die log $ printf "Invalid string value for number of wolf frames (%s)" s
+    limitFrames' <- getLimitFrames' :: IO ([a] -> [a])
+    info log "Please wait . . . (parsing obj files, will take a while)"
+    textureConfigYaml' <- wolfTextureConfigYaml bodyPng64 eyesPng64 furPng64
+    parsedEi' <- initWolfParse $ Just textureConfigYaml'
+    when (isLeft parsedEi') .
+        dieM log $ printf "Unable to parse obj file: %s" (toLeft parsedEi')
+    let (wolfSeq', wolfTextureMap') = toRight parsedEi'
+        Cmog.Sequence wolfSeqFrames' = wolfSeq'
+        wolfSeq'' = Cmog.Sequence . limitFrames' $ wolfSeqFrames'
+    -- deepseq in combination with our limitFrames'
+    -- function works correctly: it only forces the
+    -- chunk which results from limitFrames'.
+    debug log "forcing deepseq"
+    spec' <- deepseq wolfSeq'' $ wolfSpec log wolfTextureMap'
+    debug log "done forcing deepseq"
+    pure (spec', Just wolfSeq'')
+
+-- duplication xxx
+initForum config log = do
+    parsedEi' <- initForumParse Nothing
+    when (isLeft parsedEi') .
+        dieM log $ printf "Unable to parse obj file: %s" (toLeft parsedEi')
+    let (seq', texMap') = toRight parsedEi'
+    info log $ printf "texmap %s" (show texMap')
+    spec' <- wolfSpec log texMap'
+    pure (spec', Just seq')
+
+
+
+
 die log str = do
     _ <- err log str
     error str
+
+dieM log str = err log str >> empty
+
+cmogVertex3ToLocalVertex3     (Cmog.Vertex3 a b c) = Vertex3 a b c
+cmogVertex2ToLocalVertex4 c d (Cmog.Vertex2 a b  ) = Vertex4 a b c d
+cmogVertex3ToLocalVertex4 d   (Cmog.Vertex3 a b c) = Vertex4 a b c d
+
