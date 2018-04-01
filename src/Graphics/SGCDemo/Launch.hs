@@ -1763,15 +1763,13 @@ getRemainingTranslateZ app = max 0 $ maxTranslateZ - curTranslateZ' where
 -- Ke: emissive texture map
 -- • quasiquotes don't seem to work in the cross-compiler (needs external
 -- interpreter), but why did it work in the Mesh module?)
--- • the furPng is an alpha map and doesn't really work as a texture.
+-- • the furPng is an alpha map -- can it work as a texture?
 textureConfigYaml :: ByteString -> ByteString -> ByteString -> IO ByteString
 textureConfigYaml bodyPng eyesPng furPng = pure $
     "textures:\n" <>
     "  - materialName: Material\n" <>
-    "    imageBase64: " <> bodyPng <> "\n" <>
---     "    width: 4096\n" <>
---     "    height: 2048\n" <>
-    "    width: 512\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
     "    height: 256\n" <>
     "  - materialName: eyes\n" <>
     "    imageBase64: " <> eyesPng <> "\n" <>
@@ -1845,14 +1843,21 @@ drawWolf app wolfSeq shader texMaps flipper t args = do
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
 
-    -- @demo just the first n bursts (enough to paint something
-    -- wolf-like); also, texture indices are hardcoded.
-    let (tex1, tex2) | isEmbedded = (8, 8)
-                     | otherwise = (9, 11)
-        (numBursts1, numBursts2) = (4, 1)
+    info log $ printf "got %d bursts" (length bursts')
 
-    mapM_ (draw' $ Just tex1) . take numBursts1                   $ bursts'
-    mapM_ (draw' $ Just tex2) . take numBursts2 . drop numBursts1 $ bursts'
+    -- @demo just enough to draw something wolf-like; also, texture indices
+    -- are hardcoded.
+    -- [fur (i.e. body), claws, eyes, teeth, mane=Material (i.e. fur), floor]
+    -- @demo it's not easy to know what tex1, tex2, and tex3 refer to =>
+    -- should be handled better.
+    -- tex1 = fur, tex2 = eyes, tex3 = body
+    let (tex1, tex2, tex3) | isEmbedded = (8, 8, 8)
+                           | otherwise = (9, 10, 11)
+        (texFur, texEyes, texBody) = (tex1, tex2, tex3)
+        [burstFur, _, burstEyes, _, burstMane, _] = bursts'
+
+    mapM_ (draw' $ Just texBody) [burstFur]
+    mapM_ (draw' $ Just texEyes) [burstEyes]
 
 -- @demo textureIdx is a kludge -- should figure out dynamically.
 drawWolfBurst log appmatrix shader textureIdxMb burst = do

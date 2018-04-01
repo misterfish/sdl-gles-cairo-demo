@@ -6,7 +6,7 @@
 faceSpec: wolf
 
 doWolf: true
-wolfFrames: 10
+wolfFrames: 1
 doInitRotate: true
 doCube: true
 doCarrousel: false
