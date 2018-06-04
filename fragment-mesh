@@ -11,10 +11,15 @@ varying vec4 v_position;
 varying vec2 v_texcoord;
 varying vec4 v_normal;
 
-varying float v_specularExp;
-varying vec4 v_ambientColor;
-varying vec4 v_diffuseColor;
-varying vec4 v_specularColor;
+// varying float v_specularExp;
+// varying vec4 v_ambientColor;
+// varying vec4 v_diffuseColor;
+// varying vec4 v_specularColor;
+
+uniform float specularExp;
+uniform vec4 ambientColor;
+uniform vec4 diffuseColor;
+uniform vec4 specularColor;
 
 vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);
 
@@ -56,10 +61,10 @@ void main()
     light l = light (
         ambientStrength,
         specularStrength,
-        v_specularExp,
-        v_ambientColor,
-        v_diffuseColor,
-        v_specularColor,
+        specularExp,
+        ambientColor,
+        diffuseColor,
+        specularColor,
         vec4 (-10.0, -2.0, 3.0, 1.0)
     );
 

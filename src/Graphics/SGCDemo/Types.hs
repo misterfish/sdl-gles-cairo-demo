@@ -198,7 +198,7 @@ data ProjectionType = ProjectionFrustum
 
 data VertexData = VertexDataC AttribLocation AttribLocation AttribLocation
                 | VertexDataT AttribLocation AttribLocation AttribLocation UniformLocation
-                | VertexDataM AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation AttribLocation UniformLocation UniformLocation UniformLocation
+                | VertexDataM AttribLocation AttribLocation AttribLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation
                   deriving (Eq, Show)
 
 data Shader = ShaderC Shader'

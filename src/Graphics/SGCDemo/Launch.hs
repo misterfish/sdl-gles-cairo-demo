@@ -114,7 +114,7 @@ import           Data.Maybe ( isNothing, isJust, fromJust )
 import           Data.Either ( isLeft, isRight )
 import qualified Data.StateVar      as STV ( get )
 import           Data.StateVar      as STV ( makeStateVar )
-import           Data.Word ( Word8 )
+import           Data.Word ( Word8, Word32 )
 import           Data.ByteString    as BS ( ByteString )
 import qualified Data.ByteString.Char8  as BS8 ( pack )
 import qualified Data.ByteString    as BS ( take, readFile )
@@ -466,6 +466,8 @@ import           Graphics.SGCDemo.Draw ( pushPositions
                                        , pushNormals
                                        , pushAttributesVertex4
                                        , pushAttributesFloat
+                                       , pushAttributesWithArrayVertex4
+                                       , pushAttributesWithArrayFloat
                                        , lineStroke
                                        , rectangleStroke
                                        )
@@ -918,6 +920,8 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     texNames <- initGL log window (numCubeTextures + numWolfTextures) args
     let (texNamesCube, texNamesWolf) = splitAt numCubeTextures texNames
+
+    info' $ "texNames: " ++ show texNames
 
     -- on my device, only 8 for both.
     thing1 <- STV.get maxCombinedTextureImageUnits
@@ -1597,7 +1601,7 @@ initShaders log = do
 
         meshShader = initShaderMesh log vShaderMesh fShaderMesh mvp v3 extra3
         v3 = ( "a_position", "a_texcoord", "a_normal"
-             , "a_specularExp", "a_ambientColor", "a_diffuseColor", "a_specularColor"
+             , "specularExp", "ambientColor", "diffuseColor", "specularColor"
              , "texture", "ambientStrength", "specularStrength" )
         extra3 = Just (["transpose_inverse_model"], [])
 
@@ -1772,6 +1776,42 @@ wolfTextureConfigYaml bodyPng eyesPng furPng = pure $
     "    width: 512\n" <>
     "    height: 256\n"
 
+forumTextureConfigYaml :: ByteString -> ByteString
+forumTextureConfigYaml furPng =
+    "textures:\n" <>
+    "  - materialName: None\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: light\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: patrulla\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: patrulla2\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: red_paint\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: tire\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: van\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: wheel\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n"
+
 initWolfParse :: Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
 initWolfParse textureConfigYamlMb = do
     let mtlSrc' = wolfMtl
@@ -1785,8 +1825,11 @@ initWolfParse textureConfigYamlMb = do
 
 initForumParse :: Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
 initForumParse textureConfigYamlMb = do
+    -- xxx mobile
+    forumObj' <- GsgcForum.forumObj
+--     putStrLn $ printf "out: %s" $ show forumObj'
     let mtlSrc' = GsgcForum.forumMtl
-        objSources' = map Cmog.ConfigObjectSource GsgcForum.forumObj
+        objSources' = map Cmog.ConfigObjectSource forumObj'
         forumPawnConfig = Cmog.Config c1 c2 c3
         c1 = Cmog.ConfigObjectSpec objSources'
         c2 = Cmog.ConfigMtlSource mtlSrc'
@@ -1798,53 +1841,57 @@ drawForum app forumSeq shader flipper t args = do
         prog         = shaderProgram shader
         (um, uv, up) = shaderMatrix shader
         Cmog.Sequence frames' = forumSeq
+
+    let
         -- infinite list => head is fine.
         frame' = head frames'
         Cmog.SequenceFrame bursts' = frame'
-        texId' = 1
+
+        -- @demo we just grab the first cube texture
+        -- texId' = 1
+        texId' = read $ (!! 1) args :: Word32
 
     useShader log prog
 
-    let (burstPawn:_) = bursts'
-    forM_ [0 .. 3] $ \n -> do
-        let _app = app & appMultiplyModel model'
-            appmatrix = appMatrix _app
-            scale' = read $ (!! 1) args :: Float
-            scaleY' = read $ (!! 2) args :: Float
-            y = read $ (!! 3) args :: Float
-            z = read $ (!! 4) args :: Float
-            tx' = inv y + z * n
-            t' = frint $ t `mod` period'
-            x = read $ head args :: Float
-            rotateVelocity' = x * (1 + n)
-            period' = floor $ 360.0 / rotateVelocity'
-            rz' = (* 0) $ (* rotateVelocity') t'
-            ry' = rz' * 2
-            rx' = rz' * 3
-            
-            model' = multMatrices [ rotateZ rz'
-                                  , rotateY ry'
-                                  , rotateX rx'
-                                  , scaleX scale'
-                                  , scaleY scaleY'
-                                  , scaleZ scale'
-                                  , translateX tx' ]
-            (model, view, proj) = map3 stackPop' appmatrix
-        uniform log "model" um =<< toMGC model
-        uniform log "view" uv =<< toMGC view
-        uniform log "proj" up =<< toMGC proj
-        drawForumPawn log shader (Just texId') burstPawn
+    let arylen = 500000
+    ary1 <- mallocArray arylen :: IO (Ptr Float)
+    ary2 <- mallocArray arylen :: IO (Ptr Float)
+    ary3 <- mallocArray arylen :: IO (Ptr Float)
+    ary4 <- mallocArray arylen :: IO (Ptr Float)
+
+    -- let (burstPawn:_) = bursts'
+
+    let _app = app & appMultiplyModel model'
+        appmatrix = appMatrix _app
+        scale' = read $ (!! 0) args :: Float
+        model' = multMatrices [ scaleX scale'
+                              , scaleY scale'
+                              , scaleZ scale' ]
+        (model, view, proj) = map3 stackPop' appmatrix
+
+    uniform log "model" um =<< toMGC model
+    uniform log "view" uv =<< toMGC view
+    uniform log "proj" up =<< toMGC proj
+
+    forM_ bursts' $ \burst ->
+        drawForumPawn log shader (Just texId') (ary1, ary2, ary3, ary4) burst
 
     pure ()
 
 -- duplicate xxx
-drawForumPawn log shader textureIdxMb burst = do
-    let VertexDataM ap atc an ase aac adc asc utt uas uss = shaderVertexData shader
+drawForumPawn log shader textureIdxMb (ary1, ary2, ary3, ary4) burst = do
+    let VertexDataM ap atc an use uac udc usc utt uas uss = shaderVertexData shader
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
+
+        -- specularExp' = float 10
+        -- ambientColor' = ver4 0.6 0.6 0.6 1.0
+        -- diffuseColor' = ver4 0.6 0.6 0.6 1.0
+        -- specularColor' = ver4 0.6 0.6 0.6 1.0
         specularExp' = float 10
-        ambientColor' = ver4 0.6 0.6 0.6 1.0
-        diffuseColor' = ver4 0.6 0.6 0.6 1.0
-        specularColor' = ver4 0.6 0.6 0.6 1.0
+        ambientColor' = ver4 1.0 1.0 1.0 1.0
+        diffuseColor' = ver4 1.0 0.0 0.0 1.0
+        specularColor' = ver4 1.0 1.0 1.0 1.0
+
         vert' = map (cmogVertex3ToLocalVertex3) . DV.toList $ vertices'
         toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
         toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
@@ -1859,37 +1906,42 @@ drawForumPawn log shader textureIdxMb burst = do
     uniform log "ambient strength" uas wolfAmbientStrength
     uniform log "specular strength" uss wolfSpecularStrength
 
+    uniform log "diffuse color"  udc diffuseColor'
+    uniform log "ambient color"  uac ambientColor'
+    uniform log "specular color" usc specularColor'
+    uniform log "specular exp"   use specularExp'
+
     activateTextureMaybe log utt textureIdxMb
 
     vPtr <- pushPositions log ap vert'
     tcPtr <- pushTexCoords log atc texCoords'
     nPtr <- pushNormals log an normals'
 
-    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
-    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
-    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
-    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ specularExp'
+--     pushAttributesWithArrayVertex4 log "diffuse color" adc ary1 . replicate len' $ diffuseColor'
+--     pushAttributesWithArrayVertex4 log "ambient color" aac ary2 . replicate len' $ ambientColor'
+--     pushAttributesWithArrayVertex4 log "specular color" asc ary3 . replicate len' $ specularColor'
+--     pushAttributesWithArrayFloat   log "specular exp" ase ary4 . replicate len' $ specularExp'
 
     attrib log "ap" ap Enabled
     attrib log "atc" atc Enabled
     attrib log "an" an Enabled
-    attrib log "adc" adc Enabled
-    attrib log "aac" aac Enabled
-    attrib log "asc" asc Enabled
-    attrib log "ase" ase Enabled
+
+--     attrib log "adc" adc Enabled
+--     attrib log "aac" aac Enabled
+--     attrib log "asc" asc Enabled
+--     attrib log "ase" ase Enabled
+
     wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
-    attrib log "ase" ase Disabled
-    attrib log "asc" asc Disabled
-    attrib log "aac" aac Disabled
-    attrib log "adc" adc Disabled
+
+--     attrib log "ase" ase Disabled
+--     attrib log "asc" asc Disabled
+--     attrib log "aac" aac Disabled
+--     attrib log "adc" adc Disabled
+
     attrib log "an" an Disabled
     attrib log "atc" atc Disabled
     attrib log "ap" ap Disabled
 
-    free sePtr
-    free scPtr
-    free acPtr
-    free dcPtr
     free nPtr
     free tcPtr
     free vPtr
@@ -1967,12 +2019,13 @@ drawWolf app wolfSeq shader texMaps flipper t args = do
 
 -- @demo textureIdx is a kludge -- should figure out dynamically.
 drawWolfBurst log shader textureIdxMb burst = do
-    let VertexDataM ap atc an ase aac adc asc utt uas uss = shaderVertexData shader
+    let VertexDataM ap atc an use uac udc usc utt uas uss = shaderVertexData shader
 
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
-        textureMb'     = Cmog.materialTexture material'
-        textureTypes'  = Cmog.materialTextureTypes material'
+        -- textureMb'     = Cmog.materialTexture material'
+        -- textureTypes'  = Cmog.materialTextureTypes material'
+
         specularExp'   = Cmog.materialSpecularExp material'
         ambientColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialAmbientColor material'
         diffuseColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
@@ -2000,35 +2053,40 @@ drawWolfBurst log shader textureIdxMb burst = do
     uniform log "ambient strength" uas wolfAmbientStrength
     uniform log "specular strength" uss wolfSpecularStrength
 
+    uniform log "diffuse color"  udc diffuseColor'
+    uniform log "ambient color"  uac ambientColor'
+    uniform log "specular color" usc specularColor'
+    uniform log "specular exp"   use specularExp'
+
     vPtr <- pushPositions log ap wolfVert'
     tcPtr <- pushTexCoords log atc wolfTexCoords'
     nPtr <- pushNormals log an wolfNormals'
 
-    dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
-    acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
-    scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
-    sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ specularExp'
+--     dcPtr <- pushAttributesVertex4 log "diffuse color" adc . replicate len' $ diffuseColor'
+--     acPtr <- pushAttributesVertex4 log "ambient color" aac . replicate len' $ ambientColor'
+--     scPtr <- pushAttributesVertex4 log "specular color" asc . replicate len' $ specularColor'
+--     sePtr <- pushAttributesFloat   log "specular exp" ase . replicate len' $ specularExp'
 
     attrib log "ap" ap Enabled
     attrib log "atc" atc Enabled
     attrib log "an" an Enabled
-    attrib log "adc" adc Enabled
-    attrib log "aac" aac Enabled
-    attrib log "asc" asc Enabled
-    attrib log "ase" ase Enabled
+--     attrib log "adc" adc Enabled
+--     attrib log "aac" aac Enabled
+--     attrib log "asc" asc Enabled
+--     attrib log "ase" ase Enabled
     wrapGL log "drawArrays" . drawArrays Triangles 0 . frint $ len'
-    attrib log "ase" ase Disabled
-    attrib log "asc" asc Disabled
-    attrib log "aac" aac Disabled
-    attrib log "adc" adc Disabled
+--     attrib log "ase" ase Disabled
+--     attrib log "asc" asc Disabled
+--     attrib log "aac" aac Disabled
+--     attrib log "adc" adc Disabled
     attrib log "an" an Disabled
     attrib log "atc" atc Disabled
     attrib log "ap" ap Disabled
 
-    free sePtr
-    free scPtr
-    free acPtr
-    free dcPtr
+--     free sePtr
+--     free scPtr
+--     free acPtr
+--     free dcPtr
     free nPtr
     free tcPtr
     free vPtr
@@ -2147,11 +2205,14 @@ initWolf config log = do
 
 -- duplication xxx
 initForum config log = do
-    parsedEi' <- initForumParse Nothing
+    -- let textureConfigYaml = Nothing
+    let textureConfigYaml = Just $ forumTextureConfigYaml furPng64
+    parsedEi' <- initForumParse textureConfigYaml
     when (isLeft parsedEi') .
         dieM log $ printf "Unable to parse obj file: %s" (toLeft parsedEi')
     let (seq', texMap') = toRight parsedEi'
-    info log $ printf "texmap %s" (show texMap')
+--     info log $ printf "texmap %s" (show texMap')
+    -- currently ignored
     spec' <- wolfSpec log texMap'
     pure (spec', Just seq')
 

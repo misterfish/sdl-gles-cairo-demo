@@ -3,12 +3,13 @@
 # faceSpec: onemovie
 # faceSpec: vikingplaza
 # faceSpec: eightpics
+# faceSpec: wolf
 faceSpec: wolf
 
 doWolf: false
-wolfFrames: 1
+wolfFrames: all
 doInitRotate: true
-doCube: true
+doCube: false
 doCarrousel: false
 doStars: false
 doTorus: false
