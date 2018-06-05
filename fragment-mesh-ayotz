@@ -1,0 +1,26 @@
+#version 100
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+uniform sampler2D texture;
+
+// uniform float ambientStrength;
+// uniform float specularStrength;
+
+varying vec2 v_texcoord;
+
+// varying vec4 v_position;
+// varying vec4 v_normal;
+
+// uniform float specularExp;
+// uniform vec4 ambientColor;
+// uniform vec4 diffuseColor;
+// uniform vec4 specularColor;
+
+void main()
+{
+    vec4 init = texture2D (texture, v_texcoord);
+    gl_FragColor = init;
+    gl_FragColor.w = 1.0;
+}

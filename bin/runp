@@ -32,4 +32,10 @@ mcb     -o ./Main
 mcg
 
 cmd ln -sf "$rootdir"/assets
+cmd ln -sf "$rootdir"/config.yaml
+
+for i in ../vertex-* ../fragment-*; do
+    cmd ln -sf "$i"
+done
+
 cmd ./Main "$@" +RTS -p

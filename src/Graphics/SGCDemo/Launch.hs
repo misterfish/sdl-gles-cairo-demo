@@ -503,6 +503,7 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , initShaderColor
                                          , initShaderTextureFaces
                                          , initShaderMesh
+                                         , initShaderMeshAyotz
                                          , useShaderM
                                          , useShader
                                          , getShadersFilesystem
@@ -606,7 +607,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , FlipHemisphere (FlipUpper, FlipLower)
                                         , GraphicsTextureMapping (GraphicsTextureMapping)
                                         , ProjectionType (ProjectionFrustum, ProjectionOrtho)
-                                        , VertexData (VertexDataC, VertexDataT, VertexDataM)
+                                        , VertexData (VertexDataC, VertexDataT, VertexDataM, VertexDataMA)
                                         , appConfig
                                         , appLog
                                         , configFaceSpec
@@ -930,7 +931,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     info' $ printf "max texture image units: %s" (show thing2)
 
     debug' "initShaders"
-    (colorShader, texFacesShader, meshShader) <- initShaders log
+    (colorShader, texFacesShader, meshShader, meshShaderAyotz) <- initShaders log
 
     let toGraphTextMapping' (name, (graphics, tex)) = GraphicsTextureMapping tex graphics name
         texMapsCube :: [GraphicsTextureMapping]
@@ -967,7 +968,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
     let meshes = ( Cmog.makeInfiniteSequence <$> wolfSeqMb'
                  , Cmog.makeInfiniteSequence <$> forumSeqMb' )
 
-    appLoop config window app' (colorShader, texFacesShader, meshShader) texMaps meshes (NotFlipping FlipUpper) 0 rands args
+    appLoop config window app' (colorShader, texFacesShader, meshShader, meshShaderAyotz) texMaps meshes (NotFlipping FlipUpper) 0 rands args
 
 appLoop config window app shaders (texMapsCube, texMapsWolf) meshes flipper t rands args = do
     let log = appLog app
@@ -1004,7 +1005,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) meshes flipper t ra
 
     wrapGL log "clear" $ do GL.clear [ ColorBuffer, DepthBuffer ]
 
-    let ( colorShader, texFacesShader, meshShader ) = shaders
+    let ( colorShader, texFacesShader, meshShader, meshShaderAyotz ) = shaders
         doBackground = config & configDoBackground
 
     when doBackground $ do
@@ -1031,7 +1032,7 @@ appLoop config window app shaders (texMapsCube, texMapsWolf) meshes flipper t ra
         drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
     when (doForum) $ do
         let forumSeq = fromJust forumSeqMb'
-        drawForum app'' forumSeq meshShader flipper t args
+        drawForum app'' forumSeq meshShaderAyotz flipper t args
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
@@ -1584,9 +1585,10 @@ initShaders log = do
     let getShaders | isEmbedded == True = pure getShadersInline
                    | otherwise = getShadersFilesystem
 
-    (   vShaderColor, fShaderColor
+    ( vShaderColor, fShaderColor
       , vShaderTextureFaces, fShaderTextureFaces
-      , vShaderMesh, fShaderMesh ) <- getShaders
+      , vShaderMesh, fShaderMesh
+      , vShaderMeshAyotz, fShaderMeshAyotz ) <- getShaders
 
     let mvp = ("model", "view", "projection")
         colorShader   = initShaderColor log vShaderColor fShaderColor mvp v1 Nothing
@@ -1605,7 +1607,11 @@ initShaders log = do
              , "texture", "ambientStrength", "specularStrength" )
         extra3 = Just (["transpose_inverse_model"], [])
 
-    (,,) <$> colorShader <*> texFacesShader <*> meshShader
+        v4 = ( "a_position", "a_texcoord", "texture" )
+        meshShaderAyotz = initShaderMeshAyotz log vShaderMeshAyotz fShaderMeshAyotz mvp v4 extra4
+        extra4 = Just ([], [])
+
+    (,,,) <$> colorShader <*> texFacesShader <*> meshShader <*> meshShaderAyotz
 
 testTransforms app shader dx thetaz = do
     let log = appLog app
@@ -1823,8 +1829,8 @@ initWolfParse textureConfigYamlMb = do
 
     Cmog.parse wolfConfig
 
-initForumParse :: Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
-initForumParse textureConfigYamlMb = do
+initForumParse :: Log -> Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
+initForumParse log textureConfigYamlMb = do
     -- xxx mobile
     forumObj' <- GsgcForum.forumObj
 --     putStrLn $ printf "out: %s" $ show forumObj'
@@ -1834,6 +1840,7 @@ initForumParse textureConfigYamlMb = do
         c1 = Cmog.ConfigObjectSpec objSources'
         c2 = Cmog.ConfigMtlSource mtlSrc'
         c3 = textureConfigYamlMb
+    info log "parsing"
     Cmog.parse forumPawnConfig
 
 drawForum app forumSeq shader flipper t args = do
@@ -1873,14 +1880,22 @@ drawForum app forumSeq shader flipper t args = do
     uniform log "view" uv =<< toMGC view
     uniform log "proj" up =<< toMGC proj
 
-    forM_ bursts' $ \burst ->
+    let reducer acc burst =
+            let Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
+            in  acc + length vertices'
+
+    -- info log $ "Num vertices: " ++ (show $ foldl' reducer 0 bursts')
+
+    let burstsX' = zip bursts' [0..]
+    forM_ burstsX' $ \(burst, idx) -> do
+        -- info log $ "Forum burst #: " ++ show idx
         drawForumPawn log shader (Just texId') (ary1, ary2, ary3, ary4) burst
 
     pure ()
 
 -- duplicate xxx
 drawForumPawn log shader textureIdxMb (ary1, ary2, ary3, ary4) burst = do
-    let VertexDataM ap atc an use uac udc usc utt uas uss = shaderVertexData shader
+    let VertexDataMA ap atc utt = shaderVertexData shader
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
         -- specularExp' = float 10
@@ -1903,19 +1918,16 @@ drawForumPawn log shader textureIdxMb (ary1, ary2, ary3, ary4) burst = do
         none' = []
         len' = length vert'
 
-    uniform log "ambient strength" uas wolfAmbientStrength
-    uniform log "specular strength" uss wolfSpecularStrength
-
-    uniform log "diffuse color"  udc diffuseColor'
-    uniform log "ambient color"  uac ambientColor'
-    uniform log "specular color" usc specularColor'
-    uniform log "specular exp"   use specularExp'
-
     activateTextureMaybe log utt textureIdxMb
 
+    let info' = info log
+        -- info' $ "pushing positions: num points " ++ (show $ length vert')
     vPtr <- pushPositions log ap vert'
+    -- info' $ "pushing coords: num points " ++ (show $ length texCoords')
     tcPtr <- pushTexCoords log atc texCoords'
-    nPtr <- pushNormals log an normals'
+
+    ---- info' $ "pushing normals: num points " ++ (show $ length normals')
+    -- nPtr <- pushNormals log an normals'
 
 --     pushAttributesWithArrayVertex4 log "diffuse color" adc ary1 . replicate len' $ diffuseColor'
 --     pushAttributesWithArrayVertex4 log "ambient color" aac ary2 . replicate len' $ ambientColor'
@@ -1924,7 +1936,7 @@ drawForumPawn log shader textureIdxMb (ary1, ary2, ary3, ary4) burst = do
 
     attrib log "ap" ap Enabled
     attrib log "atc" atc Enabled
-    attrib log "an" an Enabled
+    -- attrib log "an" an Enabled
 
 --     attrib log "adc" adc Enabled
 --     attrib log "aac" aac Enabled
@@ -1938,11 +1950,11 @@ drawForumPawn log shader textureIdxMb (ary1, ary2, ary3, ary4) burst = do
 --     attrib log "aac" aac Disabled
 --     attrib log "adc" adc Disabled
 
-    attrib log "an" an Disabled
+    -- attrib log "an" an Disabled
     attrib log "atc" atc Disabled
     attrib log "ap" ap Disabled
 
-    free nPtr
+    -- free nPtr
     free tcPtr
     free vPtr
 
@@ -2207,7 +2219,7 @@ initWolf config log = do
 initForum config log = do
     -- let textureConfigYaml = Nothing
     let textureConfigYaml = Just $ forumTextureConfigYaml furPng64
-    parsedEi' <- initForumParse textureConfigYaml
+    parsedEi' <- initForumParse log textureConfigYaml
     when (isLeft parsedEi') .
         dieM log $ printf "Unable to parse obj file: %s" (toLeft parsedEi')
     let (seq', texMap') = toRight parsedEi'

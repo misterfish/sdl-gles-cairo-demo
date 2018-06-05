@@ -8,6 +8,7 @@ module Graphics.SGCDemo.Shader ( uniform
                                , initShaderColor
                                , initShaderTextureFaces
                                , initShaderMesh
+                               , initShaderMeshAyotz
                                , activateTexture
                                , useShaderM ) where
 
@@ -61,7 +62,7 @@ import           Graphics.SGCDemo.Types ( Log ( Log, info, warn, err )
                                         , Shader ( ShaderC, ShaderT, ShaderM )
                                         , Shader' (Shader')
                                         , ShaderD ( ShaderDT, ShaderDC )
-                                        , VertexData ( VertexDataC, VertexDataT, VertexDataM )
+                                        , VertexData ( VertexDataC, VertexDataT, VertexDataM, VertexDataMA )
                                         , appLog
                                         , shaderMatrix
                                         , appMatrix )
@@ -132,6 +133,7 @@ initProgram log vShaderSrc fShaderSrc = do
 data InitShader = InitShaderColor String String String
                 | InitShaderTexture String String String String
                 | InitShaderMesh String String String String String String String String String String
+                | InitShaderMeshAyotz String String String
 
 initShaderColor log vShaderSrc fShaderSrc mvp (ap, ac, an) extra = do
     let locs' = InitShaderColor ap ac an
@@ -146,6 +148,11 @@ initShaderTextureFaces log vShaderSrc fShaderSrc mvp (ap, atc, an, utt) extra = 
 initShaderMesh log vShaderSrc fShaderSrc mvp (ap, atc, an, use, uac, udc, usc, utt, uas, uss) extra = do
     let locs' = InitShaderMesh ap atc an use uac udc usc utt uas uss
     shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp locs' extra
+    pure $ ShaderM shader'
+
+initShaderMeshAyotz log vShaderSrc fShaderSrc mvp (ap, atc, utt) extra = do
+    let locs' = InitShaderMeshAyotz ap atc utt
+    shader' <- initShader' log "ma" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderM shader'
 
 -- extra: Maybe (uniforms, atts)
@@ -167,14 +174,17 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
     let InitShaderColor cap cac can = locs
         InitShaderTexture tap tatc tan tutt = locs
         InitShaderMesh map' matc man mase maac madc masc mutt muas muss = locs
+        InitShaderMeshAyotz maap maatc mautt = locs
     let vertexDataC' = VertexDataC <$> att' cap   <*> att' cac   <*> att' can
         vertexDataT' = VertexDataT <$> att' tap   <*> att' tatc  <*> att' tan  <*> unif' tutt
         vertexDataM' = VertexDataM <$> att' map'  <*> att' matc   <*> att' man
                                    <*> unif' mase  <*> unif' maac  <*> unif' madc <*> unif' masc
                                    <*> unif' mutt <*> unif' muas <*> unif' muss
-        vertexData' = case shaderType of "t" -> vertexDataT'
-                                         "c" -> vertexDataC'
-                                         "m" -> vertexDataM'
+        vertexDataMA' = VertexDataMA <$> att' maap  <*> att' maatc   <*> unif' mautt
+        vertexData' = case shaderType of "t"  -> vertexDataT'
+                                         "c"  -> vertexDataC'
+                                         "m"  -> vertexDataM'
+                                         "ma"  -> vertexDataMA'
     Shader' <$> pure prog' <*> pure mvpMat' <*> vertexData' <*> extra' extra
 
 -- no 'enable' necessary for uniforms.
@@ -207,9 +217,13 @@ getShadersFilesystem = do
     vShaderMesh <- BS8.pack <$> readFile "vertex-mesh"
     fShaderMesh <- BS8.pack <$> readFile "fragment-mesh"
 
+    vShaderMeshAyotz <- BS8.pack <$> readFile "vertex-mesh-ayotz"
+    fShaderMeshAyotz <- BS8.pack <$> readFile "fragment-mesh-ayotz"
+
     pure ( vShaderColor, fShaderColor
          , vShaderTextureFaces, fShaderTextureFaces
-         , vShaderMesh, fShaderMesh )
+         , vShaderMesh, fShaderMesh
+         , vShaderMeshAyotz, fShaderMeshAyotz )
 
 getShadersInline =
     ( BS8.pack getShaderInlineVertexColor
@@ -217,7 +231,9 @@ getShadersInline =
     , BS8.pack getShaderInlineVertexTextureFaces
     , BS8.pack getShaderInlineFragmentTextureFaces
     , BS8.pack getShaderInlineVertexMesh
-    , BS8.pack getShaderInlineFragmentMesh )
+    , BS8.pack getShaderInlineFragmentMesh
+    , BS8.pack getShaderInlineVertexMeshAyotz
+    , BS8.pack getShaderInlineFragmentMeshAyotz )
 
 getShaderInlineVertexColor =
     "#version 100\n" <>
@@ -427,6 +443,9 @@ getShaderInlineVertexMesh =
     "    v_diffuseColor = a_diffuseColor;\n" <>
     "    v_specularColor = a_specularColor;\n" <>
     "}\n"
+
+getShaderInlineVertexMeshAyotz = ""
+getShaderInlineFragmentMeshAyotz = ""
 
 getShaderInlineFragmentMesh =
     "#version 100\n" <>

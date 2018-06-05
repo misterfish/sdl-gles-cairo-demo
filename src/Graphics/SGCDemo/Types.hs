@@ -24,7 +24,7 @@ module Graphics.SGCDemo.Types
     , DrawInfo (DrawVertex, DrawColor, DrawTexCoord, DrawNormal)
     , MVPConfig (MVPConfig)
     , ProjectionType (ProjectionFrustum, ProjectionOrtho)
-    , VertexData (VertexDataC, VertexDataT, VertexDataM)
+    , VertexData (VertexDataC, VertexDataT, VertexDataM, VertexDataMA)
     -- , VertexN (VertexN1, VertexN3, VertexN4)
     , drawInfoAttribLocation
     , drawInfoVertexCoords
@@ -199,6 +199,7 @@ data ProjectionType = ProjectionFrustum
 data VertexData = VertexDataC AttribLocation AttribLocation AttribLocation
                 | VertexDataT AttribLocation AttribLocation AttribLocation UniformLocation
                 | VertexDataM AttribLocation AttribLocation AttribLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation UniformLocation
+                | VertexDataMA AttribLocation AttribLocation UniformLocation
                   deriving (Eq, Show)
 
 data Shader = ShaderC Shader'

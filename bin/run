@@ -22,11 +22,7 @@ mkchd "$rootdir"/build
 
 mci
 mcb ghc
-
-# --- big difference on lazy.
-# mcb     -O1
-
-mcb -O2 # want wolf
+mcb -O2
 mcb     -XPatternSynonyms "$rootdir"/app/Main.hs
 mcb     "$rootdir"/src/clib.c
 mcb     -i"$rootdir"/src

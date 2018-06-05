@@ -301,6 +301,7 @@ pushAttributesWithArrayVertexN :: Int32 -> GL.DataType -> Log -> String -> Attri
 pushAttributesWithArrayVertexN numComp dataType log tag attribLocation ary points = do
     let stride' = 0
         desc' = VertexArrayDescriptor numComp dataType stride' ary
+    -- info log $ "poking an array with num points: " ++ (show $ length points)
     pokeArray ary points
     wrapGL log tag $ vertexAttribPointer attribLocation $= (ToFloat, desc')
     pure ()
