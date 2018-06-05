@@ -1613,7 +1613,8 @@ initShaders log = do
              , "texture", "ambientStrength", "specularStrength" )
         extra3 = Just (["transpose_inverse_model"], [])
 
-        v4 = ( "a_position", "a_texcoord", "texture" )
+        v4 = ( "a_position", "a_texcoord", "a_normal"
+             , "specularExp", "diffuseColor", "specularColor", "texture" )
         meshShaderAyotz = initShaderMeshAyotz log vShaderMeshAyotz fShaderMeshAyotz mvp v4 extra4
         extra4 = Just ([], [])
 
@@ -1899,23 +1900,25 @@ drawScene app sceneSeq shader buffers flipper t args = do
 
 -- duplicate xxx
 drawSceneBurst log shader textureIdxMb buffers burst doPush = do
-    let VertexDataMA ap atc utt = shaderVertexData shader
+    let VertexDataMA ap atc an use udc usc utt = shaderVertexData shader
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
         vert' = map (cmogVertex3ToLocalVertex3) . DV.toList $ vertices'
-        -- toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
+        -- we use Vertex3 for texcoords, with the last one set 1.
+        toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
         -- we use Vertex4 for texcoords, with the last two set to 0 and 1.
-        toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
+        -- toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
 
-        [vBuf, tcBuf, _] = buffers
-        Buffer _ vAry = vBuf
-        Buffer _ tcAry = tcBuf
+        [ vBuf, tcBuf, nBuf ] = buffers
 
-        -- normals'   :: [Vertex4 Float]
-        -- normals'   = maybe none' toNormalsMb normalsMb'
+        vAry  = bufferAry vBuf
+        -- tcAry = bufferAry tcBuf
+        nAry  = bufferAry nBuf
 
-        texCoords' :: [Vertex4 Float]
-        texCoords' = maybe none' toTexCoordsMb texCoordsMb'
+        normals'   :: [Vertex4 Float]
+        normals'   = maybe none' toNormalsMb normalsMb'
+        -- texCoords' :: [Vertex4 Float]
+        -- texCoords' = maybe none' toTexCoordsMb texCoordsMb'
         none' = []
         len' = length vert'
 
@@ -1923,30 +1926,24 @@ drawSceneBurst log shader textureIdxMb buffers burst doPush = do
         diffuseColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
         specularColor' = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
-    activateTextureMaybe log utt textureIdxMb
+    -- activateTextureMaybe log utt textureIdxMb
 
-    -- let info' = info log
-    -- info' $ "pushing positions: num points " ++ (show $ length vert')
-    -- info' $ "pushing coords: num points " ++ (show $ length texCoords')
+    uniform log "specular exp"  use specularExp'
+    uniform log "diffuse color"  udc diffuseColor'
+    uniform log "specular color"  usc specularColor'
 
     if doPush then do
         pushPositionsWithArray log vAry ap (Just vert')
-        pushTexCoordsWithArray log tcAry atc (Just texCoords')
+        -- pushTexCoordsWithArray log tcAry atc (Just texCoords')
+        pushNormalsWithArray log nAry an (Just normals')
     else do
         pushPositionsWithArray log vAry ap Nothing
-        pushTexCoordsWithArray log tcAry atc Nothing
-
-    ---- info' $ "pushing normals: num points " ++ (show $ length normals')
-    -- nPtr <- pushNormals log an normals'
-
---     pushAttributesWithArrayVertex4 log "diffuse color" adc ary1 . replicate len' $ diffuseColor'
---     pushAttributesWithArrayVertex4 log "ambient color" aac ary2 . replicate len' $ ambientColor'
---     pushAttributesWithArrayVertex4 log "specular color" asc ary3 . replicate len' $ specularColor'
---     pushAttributesWithArrayFloat   log "specular exp" ase ary4 . replicate len' $ specularExp'
+        -- pushTexCoordsWithArray log tcAry atc Nothing
+        pushNormalsWithArray log nAry an Nothing
 
     attrib log "ap" ap Enabled
-    attrib log "atc" atc Enabled
-    -- attrib log "an" an Enabled
+    -- attrib log "atc" atc Enabled
+    attrib log "an" an Enabled
 
 --     attrib log "adc" adc Enabled
 --     attrib log "aac" aac Enabled
@@ -1960,8 +1957,8 @@ drawSceneBurst log shader textureIdxMb buffers burst doPush = do
 --     attrib log "aac" aac Disabled
 --     attrib log "adc" adc Disabled
 
-    -- attrib log "an" an Disabled
-    attrib log "atc" atc Disabled
+    attrib log "an" an Disabled
+    -- attrib log "atc" atc Disabled
     attrib log "ap" ap Disabled
 
     -- free nPtr
@@ -2075,10 +2072,9 @@ drawWolfBurst log shader textureIdxMb burst = do
     uniform log "ambient strength" uas wolfAmbientStrength
     uniform log "specular strength" uss wolfSpecularStrength
 
-    uniform log "diffuse color"  udc diffuseColor'
-    uniform log "ambient color"  uac ambientColor'
-    uniform log "specular color" usc specularColor'
     uniform log "specular exp"   use specularExp'
+    uniform log "diffuse color"  udc diffuseColor'
+    uniform log "specular color" usc specularColor'
 
     vPtr <- pushPositions log ap wolfVert'
     tcPtr <- pushTexCoords log atc wolfTexCoords'
@@ -2236,14 +2232,23 @@ initScene config log = do
     buffers <- do  let Cmog.Sequence frames = seq'
                        frame = head frames
                        Cmog.SequenceFrame bursts = frame
-                   initBuffers bursts [MakeBufferVertex3, MakeBufferVertex4, MakeBufferVertex4]
+                   initBuffers bursts [ MakeBufferVertex3 -- pos
+                                      , MakeBufferVertex4 -- tc
+                                      , MakeBufferVertex4 -- normals
+                                      ]
+--                                       , MakeBufferScalar  -- spec exp
+--                                       , MakeBufferVertex4 -- diff col
+--                                       , MakeBufferVertex4 -- spec col
+--                                       ]
 
     spec' <- wolfSpec log texMap'
     pure (spec', Just seq', buffers)
 
 -- in the end the backing array is always a Ptr Float of course.
 -- we use 3 for verts, 4 for texcoords and normals.
-data Buffer = Buffer Int (Ptr Float)
+data Buffer = Buffer { bufferLength :: Int
+                     , bufferAry    :: (Ptr Float) }
+
 data Maker = MakeBufferScalar
            | MakeBufferVertex3
            | MakeBufferVertex4
@@ -2257,13 +2262,24 @@ initBuffers bursts attributeConstructors = do
 
     mapM (makeBuffers attributeConstructors) bursts
 
+-- position (num vertices)
+-- texcoords (num texcoords)
+-- normals (num vertices)
+-- and all other attributes are tied to num vertices.
+
 makeBuffers attributeConstructors burst = do
     let (vl, tcl) = analyzeBurst burst
-    let [make1, make2, make3] = attributeConstructors
+        -- let [make1, make2, make3] = attributeConstructors
         -- (,,) <$> makeBuffer vl make1 <*> makeBuffer tcl make2 <*> makeBuffer vl make3
-    sequence $ [ makeBuffer vl make1
-               , makeBuffer tcl make2
-               , makeBuffer vl make3 ]
+
+--     sequence $ [ makeBuffer vl make1
+--                , makeBuffer tcl make2
+--                , makeBuffer vl make3 ]
+
+    let map' (len', maker') = makeBuffer len' maker'
+        x = vl : tcl : repeat vl
+
+    mapM map' $ zip x attributeConstructors
 
 makeBuffer len maker = Buffer len' <$> mallocArray len' where
     len' = len * factor'

@@ -133,7 +133,7 @@ initProgram log vShaderSrc fShaderSrc = do
 data InitShader = InitShaderColor String String String
                 | InitShaderTexture String String String String
                 | InitShaderMesh String String String String String String String String String String
-                | InitShaderMeshAyotz String String String
+                | InitShaderMeshAyotz String String String String String String String
 
 initShaderColor log vShaderSrc fShaderSrc mvp (ap, ac, an) extra = do
     let locs' = InitShaderColor ap ac an
@@ -150,8 +150,8 @@ initShaderMesh log vShaderSrc fShaderSrc mvp (ap, atc, an, use, uac, udc, usc, u
     shader' <- initShader' log "m" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderM shader'
 
-initShaderMeshAyotz log vShaderSrc fShaderSrc mvp (ap, atc, utt) extra = do
-    let locs' = InitShaderMeshAyotz ap atc utt
+initShaderMeshAyotz log vShaderSrc fShaderSrc mvp (ap, atc, an, use, udc, usc, utt) extra = do
+    let locs' = InitShaderMeshAyotz ap atc an use udc usc utt
     shader' <- initShader' log "ma" vShaderSrc fShaderSrc mvp locs' extra
     pure $ ShaderM shader'
 
@@ -174,13 +174,15 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
     let InitShaderColor cap cac can = locs
         InitShaderTexture tap tatc tan tutt = locs
         InitShaderMesh map' matc man mase maac madc masc mutt muas muss = locs
-        InitShaderMeshAyotz maap maatc mautt = locs
+        -- InitShaderMeshAyotz maap maatc mautt = locs
+        InitShaderMeshAyotz maap maatc maan mause maudc mausc mautt = locs
     let vertexDataC' = VertexDataC <$> att' cap   <*> att' cac   <*> att' can
         vertexDataT' = VertexDataT <$> att' tap   <*> att' tatc  <*> att' tan  <*> unif' tutt
         vertexDataM' = VertexDataM <$> att' map'  <*> att' matc   <*> att' man
                                    <*> unif' mase  <*> unif' maac  <*> unif' madc <*> unif' masc
                                    <*> unif' mutt <*> unif' muas <*> unif' muss
-        vertexDataMA' = VertexDataMA <$> att' maap  <*> att' maatc   <*> unif' mautt
+        vertexDataMA' = VertexDataMA <$> att' maap  <*> att' maatc   <*> att' maan
+                                     <*> unif' mause <*> unif' maudc <*> unif' mausc <*> unif' mautt
         vertexData' = case shaderType of "t"  -> vertexDataT'
                                          "c"  -> vertexDataC'
                                          "m"  -> vertexDataM'

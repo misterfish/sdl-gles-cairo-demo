@@ -3,24 +3,73 @@
 precision mediump float;
 #endif
 
-uniform sampler2D texture;
+// uniform sampler2D texture;
 
-// uniform float ambientStrength;
-// uniform float specularStrength;
+uniform float specularExp;
+uniform vec4 diffuseColor;
+uniform vec4 specularColor;
 
-varying vec2 v_texcoord;
+varying vec4 v_position;
+// varying vec2 v_texcoord;
+varying vec4 v_normal;
 
-// varying vec4 v_position;
-// varying vec4 v_normal;
+float specularStrength = 10.0;
 
-// uniform float specularExp;
-// uniform vec4 ambientColor;
-// uniform vec4 diffuseColor;
-// uniform vec4 specularColor;
+vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);
+
+struct light {
+    float specularStrength;
+    float specularExp;
+    vec4 diffuseColor;
+    vec4 specularColor;
+    vec4 lightPos;
+};
+
+// ok to send entire struct as an arg?
+
+vec4 get_lighting (vec4 viewDir, vec4 norm, light l)
+{
+    vec4 lightDir = normalize (l.lightPos - v_position);
+    float lightProj = dot (norm, lightDir);
+
+    // xxx
+    lightProj = abs (lightProj);
+
+    vec4 diffuse = max (lightProj, 0.0) * l.diffuseColor;
+    diffuse.w = l.diffuseColor.w;
+
+    vec4 reflectDir = reflect (-lightDir, norm);
+    float reflectProj = dot (viewDir, reflectDir);
+    float spec = pow (max (reflectProj, 0.0), l.specularExp);
+    vec4 specular = l.specularStrength * l.specularColor * spec;
+
+    vec4 ambient = vec4 (1.0, 1.0, 1.0, 1.0);
+
+    return ambient + specular + diffuse;
+}
 
 void main()
 {
-    vec4 init = texture2D (texture, v_texcoord);
-    gl_FragColor = init;
+    light l = light (
+        specularStrength,
+        specularExp,
+        diffuseColor,
+        specularColor,
+        vec4 (-10.0, -2.0, 3.0, 1.0)
+    );
+
+    // vec4 init = texture2D (texture, v_texcoord);
+    vec4 init = diffuseColor;
+
+    vec4 norm = normalize (v_normal);
+    norm.w = 0.0;
+
+    vec4 viewDir = normalize (viewPos - v_position);
+
+    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 0.0);
+    lightTotal += get_lighting (viewDir, norm, l);
+
+    gl_FragColor = init * lightTotal;
+
     gl_FragColor.w = 1.0;
 }
