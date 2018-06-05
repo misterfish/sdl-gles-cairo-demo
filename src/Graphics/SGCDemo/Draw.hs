@@ -8,8 +8,11 @@ module Graphics.SGCDemo.Draw ( triangle
                           , triangleStrip
                           , rectangleStroke
                           , pushPositions
+                          , pushPositionsWithArray
                           , pushTexCoords
+                          , pushTexCoordsWithArray
                           , pushNormals
+                          , pushNormalsWithArray
                           -- , pushAttributesVertex1
                           , pushAttributesVertex3
                           , pushAttributesVertex4
@@ -285,8 +288,11 @@ lineStroke' app shader (c1, c2) dr thickness = do
 -- and the shaders give them meaning.
 
 pushTexCoords log = pushAttributesVertex4 log "attrib: tex coords"
+pushTexCoordsWithArray log ary = pushAttributesWithArrayVertex4 log "attrib: tex coords" ary
 pushNormals   log = pushAttributesVertex4 log "attrib: normals"
+pushNormalsWithArray   log ary = pushAttributesWithArrayVertex4 log "attrib: normals" ary
 pushPositions log = pushAttributesVertex3 log "attrib: vertex positions"
+pushPositionsWithArray log ary = pushAttributesWithArrayVertex3 log "attrib: vertex positions" ary
 pushColors    log = pushAttributesVertex4 log "attrib: colors"
 
 -- private.
@@ -324,8 +330,13 @@ pushAttributesWithArrayFloat :: Log -> String -> AttribLocation -> Ptr Float -> 
 pushAttributesWithArrayFloat log tag attribLocation ary ns = do
     pushAttributesWithArrayVertexN 1 GL.Float log tag attribLocation ary ns
 
-pushAttributesWithArrayVertex4 :: Log -> String -> AttribLocation -> Ptr Float -> [Vertex4 Float] -> IO ()
-pushAttributesWithArrayVertex4 log tag attribLocation ary verts = do
+pushAttributesWithArrayVertex3 :: Log -> String -> Ptr Float -> AttribLocation -> [Vertex3 Float] -> IO ()
+pushAttributesWithArrayVertex3 log tag ary attribLocation verts = do
+    let coords' = concatVertex3 verts
+    pushAttributesWithArrayVertexN 3 GL.Float log tag attribLocation ary coords'
+
+pushAttributesWithArrayVertex4 :: Log -> String -> Ptr Float -> AttribLocation -> [Vertex4 Float] -> IO ()
+pushAttributesWithArrayVertex4 log tag ary attribLocation verts = do
     let coords' = concatVertex4 verts
     pushAttributesWithArrayVertexN 4 GL.Float log tag attribLocation ary coords'
 
