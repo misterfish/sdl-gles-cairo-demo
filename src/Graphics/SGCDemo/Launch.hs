@@ -470,7 +470,7 @@ import           Graphics.SGCDemo.Draw ( pushColors
                                        , pushAttributesVertex4
                                        , pushAttributesFloat
                                        , pushAttributesWithArrayVertex4
-                                       , pushAttributesWithArrayFloat
+                                       , pushAttributesWithArrayScalar
                                        , lineStroke
                                        , rectangleStroke
                                        )
@@ -1920,9 +1920,12 @@ drawForumPawn log shader textureIdxMb buffers burst doPush = do
     -- info' $ "pushing positions: num points " ++ (show $ length vert')
     -- info' $ "pushing coords: num points " ++ (show $ length texCoords')
 
-    when doPush $ do
-        pushPositionsWithArray log vAry ap vert'
-        pushTexCoordsWithArray log tcAry atc texCoords'
+    if doPush then do
+        pushPositionsWithArray log vAry ap (Just vert')
+        pushTexCoordsWithArray log tcAry atc (Just texCoords')
+    else do
+        pushPositionsWithArray log vAry ap Nothing
+        pushTexCoordsWithArray log tcAry atc Nothing
 
     ---- info' $ "pushing normals: num points " ++ (show $ length normals')
     -- nPtr <- pushNormals log an normals'

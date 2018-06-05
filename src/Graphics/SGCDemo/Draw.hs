@@ -17,8 +17,10 @@ module Graphics.SGCDemo.Draw ( triangle
                           , pushAttributesVertex3
                           , pushAttributesVertex4
                           , pushAttributesFloat
+
                           , pushAttributesWithArrayVertex4
-                          , pushAttributesWithArrayFloat
+                          , pushAttributesWithArrayScalar
+
                           , pushColors
                           , torus
                           , lineStroke ) where
@@ -288,29 +290,35 @@ lineStroke' app shader (c1, c2) dr thickness = do
 -- and the shaders give them meaning.
 
 pushTexCoords log = pushAttributesVertex4 log "attrib: tex coords"
-pushTexCoordsWithArray log ary = pushAttributesWithArrayVertex4 log "attrib: tex coords" ary
 pushNormals   log = pushAttributesVertex4 log "attrib: normals"
-pushNormalsWithArray   log ary = pushAttributesWithArrayVertex4 log "attrib: normals" ary
 pushPositions log = pushAttributesVertex3 log "attrib: vertex positions"
-pushPositionsWithArray log ary = pushAttributesWithArrayVertex3 log "attrib: vertex positions" ary
 pushColors    log = pushAttributesVertex4 log "attrib: colors"
+
+pushTexCoordsWithArray log ary = pushAttributesWithArrayVertex4 log "attrib: tex coords" ary
+pushNormalsWithArray   log ary = pushAttributesWithArrayVertex4 log "attrib: normals" ary
+pushPositionsWithArray log ary = pushAttributesWithArrayVertex3 log "attrib: vertex positions" ary
 
 -- private.
 pushAttributesVertexN :: Int32 -> GL.DataType -> Log -> String -> AttribLocation -> [Float] -> IO (Ptr Float)
 pushAttributesVertexN numComp dataType log tag attribLocation points = do
     -- info log $ "malloc array len: " ++ (show $ length points)
     tgt' <- mallocArray $ length points :: IO (Ptr Float)
-    pushAttributesWithArrayVertexN numComp dataType log tag attribLocation tgt' points
+    pushAttributesVertexN_ numComp dataType log tag attribLocation tgt' (Just points)
     pure tgt'
 
-pushAttributesWithArrayVertexN :: Int32 -> GL.DataType -> Log -> String -> AttribLocation -> Ptr Float -> [Float] -> IO ()
-pushAttributesWithArrayVertexN numComp dataType log tag attribLocation ary points = do
+-- private.
+pushAttributesVertexN_ :: Int32 -> GL.DataType -> Log -> String -> AttribLocation -> Ptr Float -> Maybe [Float] -> IO ()
+pushAttributesVertexN_ numComp dataType log tag attribLocation ary pointsMb = do
     let stride' = 0
         desc' = VertexArrayDescriptor numComp dataType stride' ary
     -- info log $ "poking an array with num points: " ++ (show $ length points)
-    pokeArray ary points
+    when (isJust pointsMb) $ pokeArray ary (fromJust pointsMb)
     wrapGL log tag $ vertexAttribPointer attribLocation $= (ToFloat, desc')
     pure ()
+
+pushAttributesWithArrayVertexN :: Int32 -> GL.DataType -> Log -> String -> Ptr Float -> AttribLocation -> Maybe [Float] -> IO ()
+pushAttributesWithArrayVertexN numComp dataType log tag ary attribLocation vertsMb =
+    pushAttributesVertexN_ numComp dataType log tag attribLocation ary vertsMb
 
 pushAttributesFloat :: Log -> String -> AttribLocation -> [Float] -> IO (Ptr Float)
 pushAttributesFloat log tag attribLocation ns = do
@@ -326,19 +334,18 @@ pushAttributesVertex4 log tag attribLocation verts = do
     let coords' = concatVertex4 verts
     pushAttributesVertexN 4 GL.Float log tag attribLocation coords'
 
-pushAttributesWithArrayFloat :: Log -> String -> AttribLocation -> Ptr Float -> [Float] -> IO ()
-pushAttributesWithArrayFloat log tag attribLocation ary ns = do
-    pushAttributesWithArrayVertexN 1 GL.Float log tag attribLocation ary ns
+pushAttributesWithArrayScalar :: Log -> String -> Ptr Float -> AttribLocation -> Maybe [Float] -> IO ()
+pushAttributesWithArrayScalar = pushAttributesWithArrayVertexN 1 GL.Float
 
-pushAttributesWithArrayVertex3 :: Log -> String -> Ptr Float -> AttribLocation -> [Vertex3 Float] -> IO ()
-pushAttributesWithArrayVertex3 log tag ary attribLocation verts = do
-    let coords' = concatVertex3 verts
-    pushAttributesWithArrayVertexN 3 GL.Float log tag attribLocation ary coords'
+pushAttributesWithArrayVertex3 :: Log -> String -> Ptr Float -> AttribLocation -> Maybe [Vertex3 Float] -> IO ()
+pushAttributesWithArrayVertex3 log tag ary attribLocation vertsMb = do
+    let coordsMb' = concatVertex3 <$> vertsMb
+    pushAttributesWithArrayVertexN 3 GL.Float log tag ary attribLocation coordsMb'
 
-pushAttributesWithArrayVertex4 :: Log -> String -> Ptr Float -> AttribLocation -> [Vertex4 Float] -> IO ()
-pushAttributesWithArrayVertex4 log tag ary attribLocation verts = do
-    let coords' = concatVertex4 verts
-    pushAttributesWithArrayVertexN 4 GL.Float log tag attribLocation ary coords'
+pushAttributesWithArrayVertex4 :: Log -> String -> Ptr Float -> AttribLocation -> Maybe [Vertex4 Float] -> IO ()
+pushAttributesWithArrayVertex4 log tag ary attribLocation vertsMb = do
+    let coordsMb' = concatVertex4 <$> vertsMb
+    pushAttributesWithArrayVertexN 4 GL.Float log tag ary attribLocation coordsMb'
 
 -- algorithm from StackOverflow.
 -- color-specific, no texture mapping.
