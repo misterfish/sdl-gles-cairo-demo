@@ -593,7 +593,7 @@ import           Graphics.SGCDemo.Wolf ( bodyPng64
 
 import           Graphics.SGCDemo.WolfObj ( wolfObj )
 
-import qualified Graphics.SGCDemo.Forum as GsgcForum ( forumObj, forumMtl )
+import qualified Graphics.SGCDemo.Scene as GsgcScene ( sceneObj, sceneMtl )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
@@ -905,17 +905,17 @@ launch_ (androidLog, androidWarn, androidError) args = do
                   maybe error' pure $ Y.decode configYaml
 
     let doWolf        = config & configDoWolf
-        doForum       = True
+        doScene       = True
 
     rands <- randoms
 
     let initWolf'  | not doWolf = const . const $ pure ([], Nothing)
                    | otherwise = initWolf
-        initForum' | not doForum = const . const $ pure ([], Nothing, [])
-                   | otherwise = initForum
+        initScene' | not doScene = const . const $ pure ([], Nothing, [])
+                   | otherwise = initScene
 
     (wolfTextureSpec', wolfSeqMb') <- initWolf' config log
-    (_, forumSeqMb', forumBuffers') <- initForum' config log
+    (_, sceneSeqMb', sceneBuffers') <- initScene' config log
 
     faceSpec' <- faceSpec log config rands
 
@@ -969,9 +969,9 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     debug' "starting loop"
     let meshes = ( Cmog.makeInfiniteSequence <$> wolfSeqMb'
-                 , Cmog.makeInfiniteSequence <$> forumSeqMb' )
+                 , Cmog.makeInfiniteSequence <$> sceneSeqMb' )
 
-    let buffers = forumBuffers'
+    let buffers = sceneBuffers'
 
     appLoop config window app' (colorShader, texFacesShader, meshShader, meshShaderAyotz) buffers texMaps meshes (NotFlipping FlipUpper) 0 rands args
 
@@ -981,9 +981,9 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
         debug' = debug log
         dim = dimension
 
-        (wolfSeqMb', forumSeqMb') = meshes
+        (wolfSeqMb', sceneSeqMb') = meshes
 
-        doForum = True
+        doScene = True
 
     debug' "* looping"
 
@@ -1035,10 +1035,10 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
     when (config & configDoWolf)      $ do
         let wolfSeq = fromJust wolfSeqMb'
         drawWolf app'' wolfSeq meshShader texMapsWolf' flipper t args
-    when (doForum) $ do
-        let forumSeq = fromJust forumSeqMb'
-            forumBuf = buffers
-        drawForum app'' forumSeq meshShaderAyotz forumBuf flipper t args
+    when (doScene) $ do
+        let sceneSeq = fromJust sceneSeqMb'
+            sceneBuf = buffers
+        drawScene app'' sceneSeq meshShaderAyotz sceneBuf flipper t args
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
@@ -1048,7 +1048,7 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
 
     let reloop = do let flipper' = updateFlipper flipper hit
                         meshes' = ( Cmog.tailSequence <$> wolfSeqMb'
-                                  , Cmog.tailSequence <$> forumSeqMb' )
+                                  , Cmog.tailSequence <$> sceneSeqMb' )
                     threadDelayMs frameInterval
                     appLoop config window app'' shaders buffers (texMapsCube', texMapsWolf') meshes' flipper' (t + 1) (tail rands) args
 
@@ -1788,8 +1788,9 @@ wolfTextureConfigYaml bodyPng eyesPng furPng = pure $
     "    width: 512\n" <>
     "    height: 256\n"
 
-forumTextureConfigYaml :: ByteString -> ByteString
-forumTextureConfigYaml furPng =
+-- the mapping must exist, but we're not even using it xxx
+sceneTextureConfigYaml :: ByteString -> ByteString
+sceneTextureConfigYaml furPng =
     "textures:\n" <>
     "  - materialName: None\n" <>
     "    imageBase64: " <> furPng <> "\n" <>
@@ -1808,6 +1809,10 @@ forumTextureConfigYaml furPng =
     "    width: 256\n" <>
     "    height: 256\n" <>
     "  - materialName: red_paint\n" <>
+    "    imageBase64: " <> furPng <> "\n" <>
+    "    width: 256\n" <>
+    "    height: 256\n" <>
+    "  - materialName: red_paint_old\n" <>
     "    imageBase64: " <> furPng <> "\n" <>
     "    width: 256\n" <>
     "    height: 256\n" <>
@@ -1835,25 +1840,24 @@ initWolfParse textureConfigYamlMb = do
 
     Cmog.parse wolfConfig
 
-initForumParse :: Log -> Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
-initForumParse log textureConfigYamlMb = do
+initSceneParse :: Log -> Maybe ByteString -> IO (Either String (Cmog.Sequence, Cmog.TextureMap))
+initSceneParse log textureConfigYamlMb = do
     -- xxx mobile
-    forumObj' <- GsgcForum.forumObj
---     putStrLn $ printf "out: %s" $ show forumObj'
-    let mtlSrc' = GsgcForum.forumMtl
-        objSources' = map Cmog.ConfigObjectSource forumObj'
-        forumPawnConfig = Cmog.Config c1 c2 c3
+    sceneObj' <- GsgcScene.sceneObj
+    mtlSrc' <- GsgcScene.sceneMtl
+    let objSources' = map Cmog.ConfigObjectSource sceneObj'
+        sceneConfig = Cmog.Config c1 c2 c3
         c1 = Cmog.ConfigObjectSpec objSources'
         c2 = Cmog.ConfigMtlSource mtlSrc'
         c3 = textureConfigYamlMb
     info log "parsing"
-    Cmog.parse forumPawnConfig
+    Cmog.parse sceneConfig
 
-drawForum app forumSeq shader buffers flipper t args = do
+drawScene app sceneSeq shader buffers flipper t args = do
     let log = appLog app
         prog         = shaderProgram shader
         (um, uv, up) = shaderMatrix shader
-        Cmog.Sequence frames' = forumSeq
+        Cmog.Sequence frames' = sceneSeq
 
     let
         -- infinite list => head is fine.
@@ -1888,21 +1892,22 @@ drawForum app forumSeq shader buffers flipper t args = do
         -- doPush = t == 0
         doPush = t < 10
     forM_ burstsX' $ \(burst, burstBuffer') -> do
-        -- info log $ "Forum burst #: " ++ show idx
-        drawForumPawn log shader (Just texId') burstBuffer' burst doPush
+        -- info log $ "Scene burst #: " ++ show idx
+        drawSceneBurst log shader (Just texId') burstBuffer' burst doPush
 
     pure ()
 
 -- duplicate xxx
-drawForumPawn log shader textureIdxMb buffers burst doPush = do
+drawSceneBurst log shader textureIdxMb buffers burst doPush = do
     let VertexDataMA ap atc utt = shaderVertexData shader
         Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
 
         vert' = map (cmogVertex3ToLocalVertex3) . DV.toList $ vertices'
         -- toNormalsMb = map (cmogVertex3ToLocalVertex4 1.0) . DV.toList
+        -- we use Vertex4 for texcoords, with the last two set to 0 and 1.
         toTexCoordsMb = map (cmogVertex2ToLocalVertex4 0.0 1.0) . DV.toList
 
-        (vBuf, tcBuf, _) = buffers
+        [vBuf, tcBuf, _] = buffers
         Buffer _ vAry = vBuf
         Buffer _ tcAry = tcBuf
 
@@ -1913,6 +1918,10 @@ drawForumPawn log shader textureIdxMb buffers burst doPush = do
         texCoords' = maybe none' toTexCoordsMb texCoordsMb'
         none' = []
         len' = length vert'
+
+        specularExp'   = Cmog.materialSpecularExp material' -- Float
+        diffuseColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
+        specularColor' = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
     activateTextureMaybe log utt textureIdxMb
 
@@ -2217,9 +2226,9 @@ initWolf config log = do
     pure (spec', Just wolfSeq'')
 
 -- duplication xxx
-initForum config log = do
-    let textureConfigYaml = Just $ forumTextureConfigYaml furPng64
-    parsedEi' <- initForumParse log textureConfigYaml
+initScene config log = do
+    let textureConfigYaml = Just $ sceneTextureConfigYaml furPng64
+    parsedEi' <- initSceneParse log textureConfigYaml
     when (isLeft parsedEi') .
         dieM log $ printf "Unable to parse obj file: %s" (toLeft parsedEi')
     let (seq', texMap') = toRight parsedEi'
@@ -2227,39 +2236,49 @@ initForum config log = do
     buffers <- do  let Cmog.Sequence frames = seq'
                        frame = head frames
                        Cmog.SequenceFrame bursts = frame
-                   analyzeBursts bursts []
+                   initBuffers bursts [MakeBufferVertex3, MakeBufferVertex4, MakeBufferVertex4]
 
     spec' <- wolfSpec log texMap'
     pure (spec', Just seq', buffers)
 
--- xxx attributeConstructors is a list of constructors for an as-yet to be
--- defined attribute buffer, corresponding to at least Float, Vector3 Float
--- and Vector4 Float.
-
-analyzeBursts :: [Cmog.Burst] -> [undefined] -> IO [(Buffer, Buffer, Buffer)]
-analyzeBursts bursts attributeConstructors = do
-    let print' burst = do
-            let (vl, tcl, nl) = analyzeBurst burst
-            putStrLn $ printf "vertex: %d, tex: %d, norm: %d" vl tcl nl
-    when True $ mapM_ print' bursts
-    mapM thing bursts
-
+-- in the end the backing array is always a Ptr Float of course.
+-- we use 3 for verts, 4 for texcoords and normals.
 data Buffer = Buffer Int (Ptr Float)
+data Maker = MakeBufferScalar
+           | MakeBufferVertex3
+           | MakeBufferVertex4
 
-thing burst = do
-    let (vl, tcl, nl) = analyzeBurst burst
-    (,,) <$> makeBuffer vl <*> makeBuffer tcl <*> makeBuffer nl
+initBuffers :: [Cmog.Burst] -> [Maker] -> IO [[Buffer]]
+initBuffers bursts attributeConstructors = do
+    let print' burst = do
+            let (vl, tcl) = analyzeBurst burst
+            putStrLn $ printf "vertex: %d, tex: %d, norm: %d" vl tcl vl
+    when True $ mapM_ print' bursts
 
-makeBuffer len = Buffer len <$> mallocArray len
+    mapM (makeBuffers attributeConstructors) bursts
 
-analyzeBurst burst = (vertexLength, texCoordLength, normalLength) where
+makeBuffers attributeConstructors burst = do
+    let (vl, tcl) = analyzeBurst burst
+    let [make1, make2, make3] = attributeConstructors
+        -- (,,) <$> makeBuffer vl make1 <*> makeBuffer tcl make2 <*> makeBuffer vl make3
+    sequence $ [ makeBuffer vl make1
+               , makeBuffer tcl make2
+               , makeBuffer vl make3 ]
+
+makeBuffer len maker = Buffer len' <$> mallocArray len' where
+    len' = len * factor'
+    factor' = case maker of MakeBufferScalar -> 1
+                            MakeBufferVertex3 -> 3
+                            MakeBufferVertex4 -> 4
+
+-- assumption: it is possible that there are fewer texture coordinates
+-- entries than vertices, but always an equal number of normals.
+analyzeBurst burst = (vertexLength, texCoordLength) where
     Cmog.Burst vertices' texCoordsMb' normalsMb' material' = burst
-    -- we use 3 for verts, 4 for texcoords and normals.
-    vertexLength   = 3 * length vertices'
-    texCoordLength = 4 * length (maybe [] DV.toList texCoordsMb')
-    normalLength   = 4 * length (maybe [] DV.toList normalsMb')
-
-
+    vertexLength   = numVertices'
+    texCoordLength = length (maybe [] DV.toList texCoordsMb')
+    -- normalLength   = 4 * numVertices'
+    numVertices'   = length vertices'
 
 die log str = do
     _ <- err log str
