@@ -37,6 +37,10 @@ module Graphics.SGCDemo.Types
     , appUser1
     , appUser2
     , appUser3
+    , shaderD_um
+    , shaderD_uv
+    , shaderD_up
+
 --     , isShaderC
 --     , isShaderT
     , shaderMatrix
@@ -107,6 +111,7 @@ module Graphics.SGCDemo.Types
     , isFlipping
     , configFaceSpec
     , configDoWolf
+    , configDoScene
     , configDoInitRotate
     , configDoCube
     , configDoCarrousel
@@ -249,6 +254,13 @@ data ShaderD = ShaderDC { shaderDCProgram           :: Maybe Program
                         , shaderDTAttributePosition :: AttribLocation
                         , shaderDTAttributeTexCoord :: AttribLocation
                         , shaderDTAttributeNormal   :: AttribLocation }
+
+shaderD_um (ShaderDC _ um _  _  _ _ _) = um
+shaderD_um (ShaderDT _ um _  _  _ _ _ _) = um
+shaderD_uv (ShaderDC _ _  uv _  _ _ _) = uv
+shaderD_uv (ShaderDT _ _  uv _  _ _ _ _) = uv
+shaderD_up (ShaderDC _ _  _  up _ _ _) = up
+shaderD_up (ShaderDT _ _  _  up _ _ _ _) = up
 
          -- draw directly to 565 using JP (not for cairo).
 data Tex = Tex565 { tex565GLPixelData :: PixelData CUShort
@@ -427,6 +439,7 @@ data Bubble = Bubble { bubbleXVelocity :: Double
 
 data Config = Config { configFaceSpec :: String
                      , configDoWolf :: Bool
+                     , configDoScene :: Bool
                      , configWolfFrames :: ConfigWolfFrames
                      , configDoInitRotate :: Bool
                      , configDoCube :: Bool
@@ -443,6 +456,7 @@ instance FromJSON Config where
     parseJSON (Y.Object v) = Config
         <$> v .: "faceSpec"
         <*> v .: "doWolf"
+        <*> v .: "doScene"
         <*> (ConfigWolfFramesStr <$> v .: "wolfFrames" <|> ConfigWolfFramesNum <$> v .: "wolfFrames")
         <*> v .: "doInitRotate"
         <*> v .: "doCube"

@@ -4,8 +4,10 @@ module Graphics.SGCDemo.Draw ( triangle
                           , cylinderTex
                           , coneSection
                           , coneSectionTex
+                          , circle
                           , rectangle
                           , triangleStrip
+                          , triangleFan
                           , rectangleStroke
                           , pushPositions
                           , pushPositionsWithArray
@@ -90,7 +92,6 @@ import           Graphics.SGCDemo.Shader ( uniform
                                          , uniformsMatrixD
                                          , activateTexture
                                          , attrib
-                                         , useShader
                                          , useShaderM )
 
 import           Graphics.SGCDemo.Util ( checkSDLError
@@ -170,7 +171,8 @@ notEqual []     = error "notEqual: empty list"
 notEqual [x]  = False
 notEqual (x:xs) = isJust . find (x /=) $ xs
 
-triangleStrip log data' = do
+-- @private
+triangleX' tag constructor log data' = do
     ptrs <- getptrs log data'
     let a v@(DrawVertex _ _)   = length . drawInfoVertexCoords $ v
         a v@(DrawColor _ _)    = length . drawInfoColorCoords  $ v
@@ -178,30 +180,33 @@ triangleStrip log data' = do
         a v@(DrawNormal _ _)   = length . drawInfoNormal       $ v
         n = frint . a . head $ data'
     when (notEqual . map a $ data') $
-        warn log "triangleStrip: unequal lists"
+        warn log $ tag ++ ": unequal lists"
     mapM_ (attribEnable log)  $ zip data' [0 .. ]
-    wrapGL log "drawArrays TriangleStrip"     $ drawArrays TriangleStrip 0 n
+    wrapGL log ("drawArrays " ++ tag)     $ drawArrays constructor 0 n
     mapM_ (attribDisable log) $ zip data' [0 .. ]
     mapM_ free ptrs
 
-triangleStrip' log [] _ = pure []
-triangleStrip' log data' partitions = do
-    ptrs <- getptrs log data'
-    let a v@(DrawVertex _ _)   = length . drawInfoVertexCoords $ v
-        a v@(DrawColor _ _)    = length . drawInfoColorCoords  $ v
-        a v@(DrawTexCoord _ _) = length . drawInfoTexCoords    $ v
-        n = frint . a . head $ data'
-    when (notEqual . map a $ data') $
-        warn log "triangleStrip: unequal lists"
-    let begin = mapM_ (attribEnable log)  $ zip data' [0 .. ]
-        middle' Nothing = [wrapGL log "drawArrays TriangleStrip"     $ drawArrays TriangleStrip 0 n]
-        middle' (Just m) = flip map m $ \(k, l) ->
-            wrapGL log "drawArrays TriangleStrip"     $ drawArrays TriangleStrip k ( l - k  + 1 )
-        middle = middle' partitions
-        end = do
-            mapM_ (attribDisable log) $ zip data' [0 .. ]
-            mapM_ free ptrs
-    pure $ [begin] <> middle <> [end]
+triangleStrip = triangleX' "TriangleStrip" TriangleStrip
+triangleFan = triangleX' "TriangleFan" TriangleFan
+
+-- triangleStrip' log [] _ = pure []
+-- triangleStrip' log data' partitions = do
+--     ptrs <- getptrs log data'
+--     let a v@(DrawVertex _ _)   = length . drawInfoVertexCoords $ v
+--         a v@(DrawColor _ _)    = length . drawInfoColorCoords  $ v
+--         a v@(DrawTexCoord _ _) = length . drawInfoTexCoords    $ v
+--         n = frint . a . head $ data'
+--     when (notEqual . map a $ data') $
+--         warn log "triangleStrip: unequal lists"
+--     let begin = mapM_ (attribEnable log)  $ zip data' [0 .. ]
+--         middle' Nothing = [wrapGL log "drawArrays TriangleStrip"     $ drawArrays TriangleStrip 0 n]
+--         middle' (Just m) = flip map m $ \(k, l) ->
+--             wrapGL log "drawArrays TriangleStrip"     $ drawArrays TriangleStrip k ( l - k  + 1 )
+--         middle = middle' partitions
+--         end = do
+--             mapM_ (attribDisable log) $ zip data' [0 .. ]
+--             mapM_ free ptrs
+--     pure $ [begin] <> middle <> [end]
 
 rectangle app (av, ac, an) (c1, c2, c3, c4) (v1, v2, v3, v4) = do
     let log = appLog app
@@ -461,6 +466,25 @@ coneSection' app shaderD npoints height topRadius bottomRadius angBegin angEnd d
     uniformsMatrixD log "cylinder" shaderD app'
     when doTex $ activateTexture log texName' utt'
     triangleStrip log data''
+
+-- only colors.
+circle :: App -> ShaderD -> Int -> Bool -> Float -> Vertex4 Float -> IO ()
+circle app shaderD segments filled radius colour = do
+    let log       = appLog app
+        ShaderDC mp _ _ _ av ac _ = shaderD
+        vs        = map vertex' [ 0 .. segments - 1 ]
+        vertex' n = Vertex3 (x n) (y n) 0.0
+        x n       = radius * sin (t n)
+        y n       = radius * cos (t n)
+        t n       = 2 * pi * (frint n) / frint segments
+        cs        = concat . replicate segments $ [colour]
+        data'     = [ DrawVertex av vs
+                    , DrawColor ac cs ]
+        constructor | filled = triangleFan
+                    | otherwise = triangleStrip
+    useShaderM log mp
+    uniformsMatrixD log "circle" shaderD app
+    constructor log data'
 
 -- height = 1, axis = z-axis, bottom = x-axis.
 -- top radius = 1

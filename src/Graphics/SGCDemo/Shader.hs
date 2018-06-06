@@ -65,6 +65,9 @@ import           Graphics.SGCDemo.Types ( Log ( Log, info, warn, err )
                                         , VertexData ( VertexDataC, VertexDataT, VertexDataM, VertexDataMA )
                                         , appLog
                                         , shaderMatrix
+                                        , shaderD_um
+                                        , shaderD_uv
+                                        , shaderD_up
                                         , appMatrix )
 
 uniformsMatrix log tag shader = uniformsMatrix' log tag um uv up where
@@ -78,9 +81,10 @@ uniformsMatrix' log tag um uv up app = do
         uniform' = uniform log tag
         appmatrix = appMatrix app
 
-uniformsMatrixD = uniformsMatrixD' where
-    uniformsMatrixD' log tag (ShaderDC _ um uv up _ _ _) app = uniformsMatrix' log tag um uv up app
-    uniformsMatrixD' log tag (ShaderDT _ um uv up _ _ _ _) app = uniformsMatrix' log tag um uv up app
+uniformsMatrixD log tag shader app = uniformsMatrix' log tag um uv up app where
+    um = shaderD_um shader
+    uv = shaderD_uv shader
+    up = shaderD_up shader
 
 uniform log tag unif val = wrapGL log tag $ GL.uniform unif $= val
 attrib  log tag attr state = wrapGL log str' $ vertexAttribArray attr $= state where

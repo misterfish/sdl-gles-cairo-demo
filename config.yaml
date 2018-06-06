@@ -7,9 +7,10 @@
 faceSpec: wolf
 
 doWolf: false
+doScene: false
 wolfFrames: all
 doInitRotate: true
-doCube: false
+doCube: true
 doCarrousel: false
 doStars: false
 doTorus: false

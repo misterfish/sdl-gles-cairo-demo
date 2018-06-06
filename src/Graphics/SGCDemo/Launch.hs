@@ -458,6 +458,7 @@ import           Graphics.SGCDemo.Draw ( pushColors
                                        , sphere
                                        , cylinder
                                        , cylinderTex
+                                       , circle
                                        , coneSection
                                        , coneSectionTex
                                        , torus
@@ -615,6 +616,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , appLog
                                         , configFaceSpec
                                         , configDoWolf
+                                        , configDoScene
                                         , configDoInitRotate
                                         , configDoCube
                                         , configDoCarrousel
@@ -905,7 +907,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
                   maybe error' pure $ Y.decode configYaml
 
     let doWolf        = config & configDoWolf
-        doScene       = True
+        doScene       = config & configDoScene
 
     rands <- randoms
 
@@ -983,7 +985,7 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
 
         (wolfSeqMb', sceneSeqMb') = meshes
 
-        doScene = True
+        doScene       = config & configDoScene
 
     debug' "* looping"
 
@@ -1039,6 +1041,9 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
         let sceneSeq = fromJust sceneSeqMb'
             sceneBuf = buffers
         drawScene app'' sceneSeq meshShaderAyotz sceneBuf flipper t args
+
+    drawAnnotations app'' (toShaderDC True colorShader) t args
+
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
         checkVertexHit _app click
@@ -1890,12 +1895,20 @@ drawScene app sceneSeq shader buffers flipper t args = do
     -- info log $ "Num vertices: " ++ (show $ foldl' reducer 0 bursts')
 
     let burstsX' = zip bursts' buffers
-        -- doPush = t == 0
-        doPush = t < 10
+        doPush = t == 0
     forM_ burstsX' $ \(burst, burstBuffer') -> do
         -- info log $ "Scene burst #: " ++ show idx
         drawSceneBurst log shader (Just texId') burstBuffer' burst doPush
 
+    pure ()
+
+drawAnnotations app shader t args = do
+    let log = appLog app
+        npoly = 20
+        h = 0.1
+        r = 0.2
+        colour = ver4 1.0 0.0 0.0 0.8
+    circle app shader npoly True r colour
     pure ()
 
 -- duplicate xxx
@@ -2130,6 +2143,7 @@ configYamlInline :: ByteString
 configYamlInline =
     "faceSpec: wolf\n" <>
     "doWolf: true\n" <>
+    "doScene: true\n" <>
     "wolfFrames: 10\n" <>
     "doInitRotate: true\n" <>
     "doCube: true\n" <>
