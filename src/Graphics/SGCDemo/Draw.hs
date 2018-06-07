@@ -1,3 +1,6 @@
+-- low-level drawing routines.
+-- consider decoupling from App and Log.
+
 module Graphics.SGCDemo.Draw ( triangle
                           , sphere
                           , cylinder
@@ -6,6 +9,7 @@ module Graphics.SGCDemo.Draw ( triangle
                           , coneSectionTex
                           , circle
                           , rectangle
+                          , rectangleTex
                           , triangleStrip
                           , triangleFan
                           , rectangleStroke
@@ -88,7 +92,7 @@ import           Graphics.SGCDemo.Coords ( rotateX
                                          , vec3 )
 
 import           Graphics.SGCDemo.Shader ( uniform
-                                         , uniformsMatrix
+                                         --, uniformsMatrix
                                          , uniformsMatrixD
                                          , activateTexture
                                          , attrib
@@ -210,16 +214,13 @@ triangleFan = triangleX' "TriangleFan" TriangleFan
 
 rectangle app (av, ac, an) (c1, c2, c3, c4) (v1, v2, v3, v4) = do
     let log = appLog app
-        -- p (Vertex3 x y z) = (x, y, z)
 
     vPtr <- pushPositions log av [ v1, v2, v3, v4 ]
     cPtr <- pushColors log ac [ c1, c2, c3, c4 ]
 
     attrib log "av" av Enabled
     attrib log "ac" ac Enabled
---     attrib log "an" an Enabled
     wrapGL log "drawArrays TriangleFan" $ drawArrays TriangleFan 0 4
---     attrib log "an" an Disabled
     attrib log "ac" ac Disabled
     attrib log "av" av Disabled
 
@@ -231,6 +232,40 @@ rectangleStroke app shader (c1, c2, c3, c4) (v1, v2, v3, v4) thickness = do
     lineStroke app shader (c2, c3) (v2, v3) thickness
     lineStroke app shader (c3, c4) (v3, v4) thickness
     lineStroke app shader (c4, c1) (v4, v1) thickness
+
+rectangleTex app shaderT w h texName (tx00, tx01, tx10, tx11) = do
+    let log = appLog app
+        ShaderDT mp _ _ _ utt av at an = shaderT
+        vs = [v1, v2, v3, v4]
+        ts = [tx00, tx01, tx10, tx11]
+        ns = [normal, normal, normal, normal]
+        normal = Vertex4 0 0 1.0 1.0 -- random normal
+
+        -- clockwise, by the way.
+        v1 = ver3 0 0 0
+        v2 = ver3 0 h 0
+        v3 = ver3 w h 0
+        v4 = ver3 w 0 0
+
+    useShaderM log mp
+    uniformsMatrixD app "rectangleTex" shaderT
+    activateTexture log texName utt
+
+    vPtr <- pushPositions log av vs
+    nPtr <- pushNormals log an ns
+    tcPtr <- pushTexCoords log at ts
+
+    attrib log "av" av Enabled
+    attrib log "an" an Enabled
+    attrib log "at" at Enabled
+    wrapGL log "drawArrays TriangleFan" $ drawArrays TriangleFan 0 4
+    attrib log "at" at Disabled
+    attrib log "an" an Disabled
+    attrib log "av" av Disabled
+
+    free tcPtr
+    free nPtr
+    free vPtr
 
 lineStroke app shader (c1, c2) (ver1, ver2) thickness = do
     let appmatrix = appMatrix app
@@ -398,6 +433,7 @@ sphere' log (av, ac, an) (slices, stacks) colour r (i, j) = do
     triangle log (av, ac, an) (colour, colour, colour) (verple3 p0, verple3 p2, verple3 p1)
     triangle log (av, ac, an) (colour, colour, colour) (verple3 p3, verple3 p1, verple3 p2)
 
+-- tex coords are currently ignored
 cylinderTex app shaderT npoints height radius angBegin angEnd texName (tx00, tx01, tx10, tx11) = do
     let log = appLog app
         ShaderDT mp _ _ _ utt av at an = shaderT
@@ -463,7 +499,7 @@ coneSection' app shaderD npoints height topRadius bottomRadius angBegin angEnd d
         utt'        = snd texInfo'
         data''      | doTex     = data' vs (Just ts) (Just ns)
                     | otherwise = data' vs Nothing Nothing
-    uniformsMatrixD log "cylinder" shaderD app'
+    uniformsMatrixD app' "cylinder" shaderD
     when doTex $ activateTexture log texName' utt'
     triangleStrip log data''
 
@@ -483,7 +519,7 @@ circle app shaderD segments filled radius colour = do
         constructor | filled = triangleFan
                     | otherwise = triangleStrip
     useShaderM log mp
-    uniformsMatrixD log "circle" shaderD app
+    uniformsMatrixD app "circle" shaderD
     constructor log data'
 
 -- height = 1, axis = z-axis, bottom = x-axis.

@@ -1,5 +1,4 @@
 module Graphics.SGCDemo.Shader ( uniform
-                               , uniformsMatrix
                                , uniformsMatrixD
                                , attrib
                                , useShader
@@ -70,18 +69,16 @@ import           Graphics.SGCDemo.Types ( Log ( Log, info, warn, err )
                                         , shaderD_up
                                         , appMatrix )
 
-uniformsMatrix log tag shader = uniformsMatrix' log tag um uv up where
-    (um, uv, up) = shaderMatrix shader
-
-uniformsMatrix' log tag um uv up app = do
+uniformsMatrix' app tag um uv up = do
+    let log = appLog app
+        uniform' = uniform log tag
+        appmatrix = appMatrix app
     (model, view, proj) <- mapM3 (toMGC . stackPop') appmatrix
     uniform' um model
     uniform' uv view
-    uniform' up proj where
-        uniform' = uniform log tag
-        appmatrix = appMatrix app
+    uniform' up proj
 
-uniformsMatrixD log tag shader app = uniformsMatrix' log tag um uv up app where
+uniformsMatrixD app tag shader = uniformsMatrix' app tag um uv up where
     um = shaderD_um shader
     uv = shaderD_uv shader
     up = shaderD_up shader
@@ -199,19 +196,25 @@ initShader' log shaderType vShaderSrc fShaderSrc (um, uv, up) locs extra = do
 
 -- | bind the texture, set it to 'active', and pass its sampler to the
 -- shader via a uniform.
---
--- assuming that the numbering of TextureObject and TextureUnit follow a
--- predictable pattern -- seems to work.
+
 activateTexture log texName utt = do
-    let TextureObject id' = texName
-        tag1 = show $ id' - 1
+    -- let TextureObject id' = texName
+    let tag1 = show texUnit'
         tag2 = show texName
+        -- texUnit' = id' - 1
+        texUnit' = 0
 
     -- both calls are necessary.
-    wrapGL log ("set activeTexture " <> tag1) $ activeTexture $= TextureUnit (id' - 1)
+    -- we always use TextureUnit 0.
+    -- we have at least 8 texture units (see max texture image units)
+    -- we set unit 0 to be active, bind a texname to it, and render it.
+    -- then the fragment shader can access it.
+    -- the fragment shader can access <max> texture units in one draw call.
+
+    wrapGL log ("set activeTexture " <> tag1) $ activeTexture $= TextureUnit texUnit'
     wrapGL log ("textureBinding " <> tag2) $ textureBinding Texture2D $= Just texName
 
-    uniform log ("utt " <> tag1) utt $ TextureUnit (id' - 1)
+    uniform log ("utt " <> tag1) utt $ TextureUnit texUnit'
 
 getShadersFilesystem = do
     vShaderColor   <- BS8.pack <$> readFile "vertex-color"

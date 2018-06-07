@@ -454,6 +454,7 @@ import           Graphics.SGCDemo.ImageData ( imageNefeli
 
 import           Graphics.SGCDemo.Draw ( pushColors
                                        , rectangle
+                                       , rectangleTex
                                        , triangle
                                        , sphere
                                        , cylinder
@@ -501,7 +502,6 @@ import           Graphics.SGCDemo.Coords ( vec3
                                          , vecl4 )
 
 import           Graphics.SGCDemo.Shader ( uniform
-                                         , uniformsMatrix
                                          , activateTexture
                                          , getShadersInline
                                          , initShaderColor
@@ -596,6 +596,8 @@ import           Graphics.SGCDemo.WolfObj ( wolfObj )
 
 import qualified Graphics.SGCDemo.Scene as GsgcScene ( sceneObj, sceneMtl )
 
+import           Graphics.SGCDemo.Glyph ( initGlyphTexture, loadGlyph )
+
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
                                         , ConfigWolfFrames (ConfigWolfFramesStr, ConfigWolfFramesNum)
@@ -617,6 +619,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , configFaceSpec
                                         , configDoWolf
                                         , configDoScene
+                                        , configSceneScale
                                         , configDoInitRotate
                                         , configDoCube
                                         , configDoCarrousel
@@ -869,6 +872,7 @@ wolfSpecGraphicsDecode log spec = do
     gs <- gs'
     pure $ zip ts gs
 
+-- xxx config
 dimension = 0.5
 frameInterval = 50
 viewportWidth  = frint windowWidth  :: GLsizei
@@ -930,6 +934,14 @@ launch_ (androidLog, androidWarn, androidError) args = do
     info' $ "texNames: " ++ show texNames
 
     -- on my device, only 8 for both.
+
+    ---- "Both the vertex shader and fragment processing combined cannot use
+    ---- more than MAX COMBINED TEXTURE IMAGE UNITS texture image units. If
+    ---- both the vertex shader and the fragment processing stage access the
+    ---- same texture image unit, then that counts as using two texture image
+    ---- units against the MAX COMBINED TEXTURE IMAGE UNITS limit."
+    ---- Note that we don't use vertex texture units -- we only sample the
+    ---- texture in the fragment shader.
     thing1 <- STV.get maxCombinedTextureImageUnits
     thing2 <- STV.get maxTextureImageUnits
     info' $ printf "num combined texture units: %s" (show thing1)
@@ -975,9 +987,12 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     let buffers = sceneBuffers'
 
-    appLoop config window app' (colorShader, texFacesShader, meshShader, meshShaderAyotz) buffers texMaps meshes (NotFlipping FlipUpper) 0 rands args
+    glyphTexName <- initGlyphTexture app
+    putStrLn $ "got " ++ show glyphTexName
 
-appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flipper t rands args = do
+    appLoop config window app' (colorShader, texFacesShader, meshShader, meshShaderAyotz) buffers texMaps glyphTexName meshes (NotFlipping FlipUpper) 0 rands args
+
+appLoop config window app shaders buffers (texMapsCube, texMapsWolf) glyphTexName meshes flipper t rands args = do
     let log = appLog app
         info' = info log
         debug' = debug log
@@ -986,6 +1001,7 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
         (wolfSeqMb', sceneSeqMb') = meshes
 
         doScene       = config & configDoScene
+        sceneScale    = config & configSceneScale
 
     debug' "* looping"
 
@@ -1040,9 +1056,10 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
     when (doScene) $ do
         let sceneSeq = fromJust sceneSeqMb'
             sceneBuf = buffers
-        drawScene app'' sceneSeq meshShaderAyotz sceneBuf flipper t args
+        drawScene app'' sceneSeq sceneScale meshShaderAyotz sceneBuf flipper t args
 
-    drawAnnotations app'' (toShaderDC True colorShader) t args
+    -- are we 'using' twice? the second one is necessary for sure -- first one doesn't work?
+    -- drawAnnotations app'' (toShaderDC True colorShader, toShaderDT True texFacesShader) glyphTexName t args
 
     hit <- ifNotFalseM (config & configDoCube) $ do
         _app <- cube app'' (colorShader, texFacesShader) texMapsCube' t flipper args
@@ -1055,7 +1072,7 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) meshes flip
                         meshes' = ( Cmog.tailSequence <$> wolfSeqMb'
                                   , Cmog.tailSequence <$> sceneSeqMb' )
                     threadDelayMs frameInterval
-                    appLoop config window app'' shaders buffers (texMapsCube', texMapsWolf') meshes' flipper' (t + 1) (tail rands) args
+                    appLoop config window app'' shaders buffers (texMapsCube', texMapsWolf') glyphTexName meshes' flipper' (t + 1) (tail rands) args
 
     if qPressed then pure () else reloop
 
@@ -1086,7 +1103,10 @@ initGL log window numTextures args = do
        debug'       $ printf "row alignment: pack = %d, unpack = %d" p u
 
     -- How OpenGL transfers pixels to/from raw memory. Default is 4.
-    -- Doesn't seem to be necessary.
+    -- Only necessary when textures are not multiples of 4; anyway, they
+    -- have to be powers of 2, so it's not clear we ever need this.
+    -- When manually copying Freetype glyphs to a texture we do need it, but
+    -- that never worked anyway.
     -- wrapGL log "row alignment unpack" $ rowAlignment Unpack      $= 1
 
     texNames <- wrapGL log "generating texture objects" $ genObjectNames numTextures
@@ -1859,7 +1879,7 @@ initSceneParse log textureConfigYamlMb = do
     info log "parsing"
     Cmog.parse sceneConfig
 
-drawScene app sceneSeq shader buffers flipper t args = do
+drawScene app sceneSeq sceneScale shader buffers flipper t args = do
     let log = appLog app
         prog         = shaderProgram shader
         (um, uv, up) = shaderMatrix shader
@@ -1872,13 +1892,13 @@ drawScene app sceneSeq shader buffers flipper t args = do
 
         -- @demo we just grab the first cube texture
         -- texId' = 1
-        texId' = read $ (!! 1) args :: Word32
+        -- texId' = read $ (!! 1) args :: Word32
 
     useShader log prog
 
     let _app = app & appMultiplyModel model'
         appmatrix = appMatrix _app
-        scale' = read $ (!! 0) args :: Float
+        scale' = sceneScale
         model' = multMatrices [ scaleX scale'
                               , scaleY scale'
                               , scaleZ scale' ]
@@ -1898,17 +1918,42 @@ drawScene app sceneSeq shader buffers flipper t args = do
         doPush = t == 0
     forM_ burstsX' $ \(burst, burstBuffer') -> do
         -- info log $ "Scene burst #: " ++ show idx
-        drawSceneBurst log shader (Just texId') burstBuffer' burst doPush
+        drawSceneBurst log shader Nothing burstBuffer' burst doPush
 
     pure ()
 
-drawAnnotations app shader t args = do
+drawAnnotations app (shaderC, shaderT) glyphTexName t args = do
     let log = appLog app
         npoly = 20
-        h = 0.1
         r = 0.2
         colour = ver4 1.0 0.0 0.0 0.8
-    circle app shader npoly True r colour
+
+--         v1 = ver3 (inv 1) 1 1
+--         v2 = ver3 (inv 1) 1 1
+--         v3 = ver3 (inv 1) 1 1
+--         v4 = ver3 (inv 1) 1 1
+
+        tx00 = Vertex4 0 0 0 1
+        tx01 = Vertex4 0 1 0 1
+        tx10 = Vertex4 1 0 0 1
+        tx11 = Vertex4 1 1 0 1
+        w = 0.2
+        h = 0.2
+
+    -- let t' = t + (read $ (!! 2) args)
+    -- let px = read $ (!! 2) args :: Int
+    -- let ch' = head $ (!! 3) args
+    -- let pad' = read $ (!! 4) args :: Int
+        -- putStrLn $ "t " <> show t
+    -- loadGlyph app glyphTexName ch' px pad'
+
+    -- circle app shaderC npoly True r colour
+    let app' = app & appMultiplyModel model'
+        model' = multMatrices [ scaleX 3.0
+                              , scaleY 3.0
+                              -- , scaleZ 3.0
+                              , translateZ 0 ]
+    -- rectangleTex app shaderT w h glyphTexName (tx00, tx01, tx10, tx11)
     pure ()
 
 -- duplicate xxx
@@ -1939,7 +1984,7 @@ drawSceneBurst log shader textureIdxMb buffers burst doPush = do
         diffuseColor'  = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialDiffuseColor material'
         specularColor' = cmogVertex3ToLocalVertex4 1.0 $ Cmog.materialSpecularColor material'
 
-    -- activateTextureMaybe log utt textureIdxMb
+    activateTextureMaybe log utt textureIdxMb
 
     uniform log "specular exp"  use specularExp'
     uniform log "diffuse color"  udc diffuseColor'

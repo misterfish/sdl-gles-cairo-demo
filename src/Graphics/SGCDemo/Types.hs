@@ -112,6 +112,7 @@ module Graphics.SGCDemo.Types
     , configFaceSpec
     , configDoWolf
     , configDoScene
+    , configSceneScale
     , configDoInitRotate
     , configDoCube
     , configDoCarrousel
@@ -440,6 +441,7 @@ data Bubble = Bubble { bubbleXVelocity :: Double
 data Config = Config { configFaceSpec :: String
                      , configDoWolf :: Bool
                      , configDoScene :: Bool
+                     , configSceneScale :: Float
                      , configWolfFrames :: ConfigWolfFrames
                      , configDoInitRotate :: Bool
                      , configDoCube :: Bool
@@ -457,6 +459,7 @@ instance FromJSON Config where
         <$> v .: "faceSpec"
         <*> v .: "doWolf"
         <*> v .: "doScene"
+        <*> v .: "sceneScale"
         <*> (ConfigWolfFramesStr <$> v .: "wolfFrames" <|> ConfigWolfFramesNum <$> v .: "wolfFrames")
         <*> v .: "doInitRotate"
         <*> v .: "doCube"

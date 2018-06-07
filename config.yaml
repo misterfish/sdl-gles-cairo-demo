@@ -7,7 +7,8 @@
 faceSpec: wolf
 
 doWolf: false
-doScene: false
+doScene: true
+sceneScale: 0.1
 wolfFrames: all
 doInitRotate: true
 doCube: true
