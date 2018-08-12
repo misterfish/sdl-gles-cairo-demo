@@ -420,19 +420,19 @@ getShaderInlineVertexMesh =
     "attribute vec2 a_texcoord;\n" <>
     "attribute vec4 a_normal;\n" <>
     "\n" <>
-    "attribute float a_specularExp;\n" <>
-    "attribute vec4 a_ambientColor;\n" <>
-    "attribute vec4 a_diffuseColor;\n" <>
-    "attribute vec4 a_specularColor;\n" <>
+    "attribute float specularExp;\n" <>
+    "attribute vec4 ambientColor;\n" <>
+    "attribute vec4 diffuseColor;\n" <>
+    "attribute vec4 specularColor;\n" <>
     "\n" <>
     "varying vec4 v_position;\n" <>
     "varying vec2 v_texcoord;\n" <>
     "varying vec4 v_normal;\n" <>
     "\n" <>
-    "varying float v_specularExp;\n" <>
-    "varying vec4 v_ambientColor;\n" <>
-    "varying vec4 v_diffuseColor;\n" <>
-    "varying vec4 v_specularColor;\n" <>
+    "// varying float v_specularExp;\n" <>
+    "// varying vec4 v_ambientColor;\n" <>
+    "// varying vec4 v_diffuseColor;\n" <>
+    "// varying vec4 v_specularColor;\n" <>
     "\n" <>
     "void main()\n" <>
     "{\n" <>
@@ -447,14 +447,11 @@ getShaderInlineVertexMesh =
     "    // v_normal = view * transpose_inverse_model * normal;\n" <>
     "    v_normal = view * model * normal;\n" <>
     "\n" <>
-    "    v_specularExp = a_specularExp;\n" <>
-    "    v_ambientColor = a_ambientColor;\n" <>
-    "    v_diffuseColor = a_diffuseColor;\n" <>
-    "    v_specularColor = a_specularColor;\n" <>
+    "    // v_specularExp = specularExp;\n" <>
+    "    // v_ambientColor = a_ambientColor;\n" <>
+    "    // v_diffuseColor = a_diffuseColor;\n" <>
+    "    // v_specularColor = a_specularColor;\n" <>
     "}\n"
-
-getShaderInlineVertexMeshAyotz = ""
-getShaderInlineFragmentMeshAyotz = ""
 
 getShaderInlineFragmentMesh =
     "#version 100\n" <>
@@ -470,10 +467,15 @@ getShaderInlineFragmentMesh =
     "varying vec2 v_texcoord;\n" <>
     "varying vec4 v_normal;\n" <>
     "\n" <>
-    "varying float v_specularExp;\n" <>
-    "varying vec4 v_ambientColor;\n" <>
-    "varying vec4 v_diffuseColor;\n" <>
-    "varying vec4 v_specularColor;\n" <>
+    "// varying float v_specularExp;\n" <>
+    "// varying vec4 v_ambientColor;\n" <>
+    "// varying vec4 v_diffuseColor;\n" <>
+    "// varying vec4 v_specularColor;\n" <>
+    "\n" <>
+    "uniform float specularExp;\n" <>
+    "uniform vec4 ambientColor;\n" <>
+    "uniform vec4 diffuseColor;\n" <>
+    "uniform vec4 specularColor;\n" <>
     "\n" <>
     "vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);\n" <>
     "\n" <>
@@ -515,10 +517,10 @@ getShaderInlineFragmentMesh =
     "    light l = light (\n" <>
     "        ambientStrength,\n" <>
     "        specularStrength,\n" <>
-    "        v_specularExp,\n" <>
-    "        v_ambientColor,\n" <>
-    "        v_diffuseColor,\n" <>
-    "        v_specularColor,\n" <>
+    "        specularExp,\n" <>
+    "        ambientColor,\n" <>
+    "        diffuseColor,\n" <>
+    "        specularColor,\n" <>
     "        vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
     "    );\n" <>
     "\n" <>
@@ -536,3 +538,116 @@ getShaderInlineFragmentMesh =
     "\n" <>
     "    gl_FragColor.w = 1.0;\n" <>
     "}\n"
+
+getShaderInlineVertexMeshAyotz =
+    "#version 100\n" <>
+    "// ES 2.0 requires 100 or 300, which are the ES versions.\n" <>
+    "\n" <>
+    "// To use this shader, each mesh must have a texture.\n" <>
+    "\n" <>
+    "uniform mat4 model;\n" <>
+    "uniform mat4 view;\n" <>
+    "uniform mat4 projection;\n" <>
+    "\n" <>
+    "uniform mat4 transpose_inverse_model;\n" <>
+    "\n" <>
+    "attribute vec4 a_position;\n" <>
+    "// --- we send a vec4, but use vec2 as the type.\n" <>
+    "// attribute vec2 a_texcoord;\n" <>
+    "attribute vec4 a_normal;\n" <>
+    "\n" <>
+    "varying vec4 v_position;\n" <>
+    "// varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    gl_Position = projection * view * model * a_position;\n" <>
+    "    // v_texcoord = a_texcoord;\n" <>
+    "\n" <>
+    "    // -- eye-space.\n" <>
+    "    v_position = view * model * a_position;\n" <>
+    "\n" <>
+    "    vec4 normal = vec4 (vec3 (a_normal), 0.0);\n" <>
+    "\n" <>
+    "    // v_normal = view * transpose_inverse_model * normal;\n" <>
+    "    v_normal = view * model * normal;\n" <>
+    "}\n"
+
+getShaderInlineFragmentMeshAyotz =
+    "#version 100\n" <>
+    "#ifdef GL_ES\n" <>
+    "precision mediump float;\n" <>
+    "#endif\n" <>
+    "\n" <>
+    "// uniform sampler2D texture;\n" <>
+    "\n" <>
+    "uniform float specularExp;\n" <>
+    "uniform vec4 diffuseColor;\n" <>
+    "uniform vec4 specularColor;\n" <>
+    "\n" <>
+    "varying vec4 v_position;\n" <>
+    "// varying vec2 v_texcoord;\n" <>
+    "varying vec4 v_normal;\n" <>
+    "\n" <>
+    "float specularStrength = 10.0;\n" <>
+    "\n" <>
+    "vec4 viewPos  = vec4 (-0.0, -0.0, 10.0, 1.0);\n" <>
+    "\n" <>
+    "struct light {\n" <>
+    "    float specularStrength;\n" <>
+    "    float specularExp;\n" <>
+    "    vec4 diffuseColor;\n" <>
+    "    vec4 specularColor;\n" <>
+    "    vec4 lightPos;\n" <>
+    "};\n" <>
+    "\n" <>
+    "// ok to send entire struct as an arg?\n" <>
+    "\n" <>
+    "vec4 get_lighting (vec4 viewDir, vec4 norm, light l)\n" <>
+    "{\n" <>
+    "    vec4 lightDir = normalize (l.lightPos - v_position);\n" <>
+    "    float lightProj = dot (norm, lightDir);\n" <>
+    "\n" <>
+    "    // xxx\n" <>
+    "    lightProj = abs (lightProj);\n" <>
+    "\n" <>
+    "    vec4 diffuse = max (lightProj, 0.0) * l.diffuseColor;\n" <>
+    "    diffuse.w = l.diffuseColor.w;\n" <>
+    "\n" <>
+    "    vec4 reflectDir = reflect (-lightDir, norm);\n" <>
+    "    float reflectProj = dot (viewDir, reflectDir);\n" <>
+    "    float spec = pow (max (reflectProj, 0.0), l.specularExp);\n" <>
+    "    vec4 specular = l.specularStrength * l.specularColor * spec;\n" <>
+    "\n" <>
+    "    vec4 ambient = vec4 (1.0, 1.0, 1.0, 1.0);\n" <>
+    "\n" <>
+    "    return ambient + specular + diffuse;\n" <>
+    "}\n" <>
+    "\n" <>
+    "void main()\n" <>
+    "{\n" <>
+    "    light l = light (\n" <>
+    "        specularStrength,\n" <>
+    "        specularExp,\n" <>
+    "        diffuseColor,\n" <>
+    "        specularColor,\n" <>
+    "        vec4 (-10.0, -2.0, 3.0, 1.0)\n" <>
+    "    );\n" <>
+    "\n" <>
+    "    // vec4 init = texture2D (texture, v_texcoord);\n" <>
+    "    vec4 init = diffuseColor;\n" <>
+    "\n" <>
+    "    vec4 norm = normalize (v_normal);\n" <>
+    "    norm.w = 0.0;\n" <>
+    "\n" <>
+    "    vec4 viewDir = normalize (viewPos - v_position);\n" <>
+    "\n" <>
+    "    vec4 lightTotal = vec4 (0.0, 0.0, 0.0, 0.0);\n" <>
+    "    lightTotal += get_lighting (viewDir, norm, l);\n" <>
+    "\n" <>
+    "    gl_FragColor = init * lightTotal;\n" <>
+    "\n" <>
+    "    gl_FragColor.w = 0.9;\n" <>
+    "}\n"
+

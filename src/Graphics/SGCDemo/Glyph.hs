@@ -44,7 +44,7 @@ import           Graphics.Rendering.FreeType.Internal.Face ( glyph
                                                            , available_sizes
                                                            )
 import           Graphics.Rendering.FreeType.Internal.FaceType ( FT_Face )
-import           Graphics.Rendering.FreeType.Internal.GlyphSlot ( bitmap, bitmap_left, bitmap_top, format )
+import           Graphics.Rendering.FreeType.Internal.GlyphSlot ( bitmap, bitmap_left, bitmap_top, format, metrics )
 import           Graphics.Rendering.FreeType.Internal.Library ( FT_Library )
 
 import           Graphics.Rendering.OpenGL as GL
@@ -100,11 +100,10 @@ initGlyphTexture app = do
     putStrLn $ "id: " ++ (show $ id' - 1)
     pure texName
 
-loadGlyph app texName ch px t = do
-    theNewWay
-
 xloadGlyph app texName ch px t = do
     theNewWay
+
+loadGlyph app texName ch px t = do
     let log = appLog app
         -- width = 256
         -- height = 256
@@ -192,6 +191,9 @@ getBmp app ch px = do
     sizes <- forM [0 .. numSizes-1] $ \i ->
         peek $ sizesPtr `plusPtr` fromIntegral i :: IO FT_Bitmap_Size
     print sizes
+
+    metrics' <- peek $ metrics slot
+    putStrLn $ "metrics: " ++ show metrics'
 
     l <- peek $ bitmap_left slot
     t <- peek $ bitmap_top slot

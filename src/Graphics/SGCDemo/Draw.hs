@@ -504,20 +504,29 @@ coneSection' app shaderD npoints height topRadius bottomRadius angBegin angEnd d
     triangleStrip log data''
 
 -- only colors.
-circle :: App -> ShaderD -> Int -> Bool -> Float -> Vertex4 Float -> IO ()
-circle app shaderD segments filled radius colour = do
+circle :: App -> ShaderD -> Int -> Bool -> Float -> Float -> Vertex4 Float -> IO ()
+circle app shaderD segments filled radius aspectRatio kleur = do
     let log       = appLog app
         ShaderDC mp _ _ _ av ac _ = shaderD
-        vs        = map vertex' [ 0 .. segments - 1 ]
+
+        -- vs' = [0, 1, 2, 3 .. 59]
+        vs' :: [Int]
+        vs' = [ 0 .. segments - 1]
+
+        vs :: [Vertex3 Float]
+        vs        = map vertex' vs'
+
         vertex' n = Vertex3 (x n) (y n) 0.0
+
         x n       = radius * sin (t n)
-        y n       = radius * cos (t n)
+        y n       = radius * cos (t n) * aspectRatio
         t n       = 2 * pi * (frint n) / frint segments
-        cs        = concat . replicate segments $ [colour]
+        cs        = concat . replicate segments $ [kleur]
         data'     = [ DrawVertex av vs
                     , DrawColor ac cs ]
         constructor | filled = triangleFan
                     | otherwise = triangleStrip
+
     useShaderM log mp
     uniformsMatrixD app "circle" shaderD
     constructor log data'

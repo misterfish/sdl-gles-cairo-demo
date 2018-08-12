@@ -149,7 +149,7 @@ import           Control.Concurrent ( threadDelay )
 import           Data.Map as Dmap ( Map
                                   , toList )
 import           Control.DeepSeq ( deepseq )
-import qualified Data.Yaml as Y ( decode )
+import qualified Data.Yaml as Y ( decodeEither' )
 import qualified Data.Vector          as DV  ( Vector
                                              , toList
                                              , fromList )
@@ -596,7 +596,7 @@ import           Graphics.SGCDemo.WolfObj ( wolfObj )
 
 import qualified Graphics.SGCDemo.Scene as GsgcScene ( sceneObj, sceneMtl )
 
-import           Graphics.SGCDemo.Glyph ( initGlyphTexture, loadGlyph )
+-- import           Graphics.SGCDemo.Glyph ( initGlyphTexture, loadGlyph )
 
 import           Graphics.SGCDemo.Types ( App (App)
                                         , Config
@@ -627,6 +627,7 @@ import           Graphics.SGCDemo.Types ( App (App)
                                         , configDoBackground
                                         , configDoTransformTest
                                         , configDoStars
+                                        , configDoCircle
                                         , configWolfFrames
                                         , texWidth
                                         , texHeight
@@ -725,6 +726,7 @@ sphereColor = color 0 57 73 255
 -- @demo load 8 separate textures, even if several faces show the same
 -- image.
 -- it is possible to reuse them, though.
+-- faceSpec :: Log -> Config -> [Double] -> IO ([Tex, GraphicsData])
 faceSpec log config rands = do
 
     info log $ "Please wait . . . (parsing face specs, this will take a while)"
@@ -854,9 +856,9 @@ faceSpec log config rands = do
 -- not wolf xxx
 wolfSpec :: Log -> Cmog.TextureMap -> IO [(Tex, GraphicsData)]
 wolfSpec log textureMap = wolfSpecGraphicsDecode log textures' where
-    tex' config' = (Cmog.tcWidth config', Cmog.tcHeight config', Cmog.tcImageBase64 config')
-    textures' = map tex' textureConfigs'
-    textureConfigs' = values textureMap
+   tex' config' = (Cmog.tcWidth config', Cmog.tcHeight config', Cmog.tcImageBase64 config')
+   textures' = map tex' textureConfigs'
+   textureConfigs' = values textureMap
 
 -- not wolf xxx
 wolfSpecGraphicsDecode :: Log -> [(Int, Int, ByteString)] -> IO [(Tex, GraphicsData)]
@@ -877,8 +879,13 @@ dimension = 0.5
 frameInterval = 50
 viewportWidth  = frint windowWidth  :: GLsizei
 viewportHeight = frint windowHeight :: GLsizei
+
+-- if this is wrong, say, 20x20, the scene will still render full-screen
+-- with all the right proportions, and the pixel dimensions of the textures
+-- will determine how they are shown, but position calculations (e.g. click
+-- detection) will be wrong.
 windowWidth  = 480 :: Int
-windowHeight = 800 :: Int
+windowHeight = 854 :: Int
 
 aspectRatio = fromIntegral viewportWidth / fromIntegral viewportHeight :: Float
 
@@ -893,6 +900,7 @@ launch_ (androidLog, androidWarn, androidError) args = do
         debug' = debug log
 
     debug' $ "embedded: " ++ show isEmbedded
+    debug' $ "I.os: " ++ I.os
     checkSDLError' "begin"
     debug' "initialising"
     initializeAll
@@ -907,8 +915,9 @@ launch_ (androidLog, androidWarn, androidError) args = do
     configYaml <- if isEmbedded then pure configYamlInline
                                 else BS.readFile "config.yaml"
 
-    config <- do  let  error' = die log "Couldn't decode config.yaml"
-                  maybe error' pure $ Y.decode configYaml
+    config <- do  let  error' err = die log $ "Couldn't decode config.yaml: " ++ show err
+                  -- maybe error' pure $ Y.decode configYaml
+                  either error' pure $ Y.decodeEither' configYaml
 
     let doWolf        = config & configDoWolf
         doScene       = config & configDoScene
@@ -987,8 +996,9 @@ launch_ (androidLog, androidWarn, androidError) args = do
 
     let buffers = sceneBuffers'
 
-    glyphTexName <- initGlyphTexture app
-    putStrLn $ "got " ++ show glyphTexName
+    -- glyphTexName <- initGlyphTexture app
+    let glyphTexName = undefined
+        -- putStrLn $ "got " ++ show glyphTexName
 
     appLoop config window app' (colorShader, texFacesShader, meshShader, meshShaderAyotz) buffers texMaps glyphTexName meshes (NotFlipping FlipUpper) 0 rands args
 
@@ -1058,7 +1068,9 @@ appLoop config window app shaders buffers (texMapsCube, texMapsWolf) glyphTexNam
             sceneBuf = buffers
         drawScene app'' sceneSeq sceneScale meshShaderAyotz sceneBuf flipper t args
 
-    -- are we 'using' twice? the second one is necessary for sure -- first one doesn't work?
+    when (config & configDoCircle) $ do
+        drawCircle app'' colorShader t args
+
     -- drawAnnotations app'' (toShaderDC True colorShader, toShaderDT True texFacesShader) glyphTexName t args
 
     hit <- ifNotFalseM (config & configDoCube) $ do
@@ -1768,6 +1780,8 @@ torusTest' app shaderC innerRadius thickness ncylinders n = do
                               , translateX t' ]
     torus app' shaderC innerRadius thickness ncylinders
 
+-- | shouldUseProgram = True / False -> program will be stored as a Just / Nothing.
+-- `useShaderM` is the usual way to 'use' it after that.
 toShaderDC shouldUseProgram shaderC' =
     ShaderDC ( prog )
              ( fst3  . shaderMatrix     $ shaderC' )
@@ -1879,6 +1893,29 @@ initSceneParse log textureConfigYamlMb = do
     info log "parsing"
     Cmog.parse sceneConfig
 
+drawCircle :: App -> Shader -> Int -> [String] -> IO ()
+drawCircle app shaderC t args = do
+    let shaderD :: ShaderD
+        shaderD = toShaderDC True shaderC
+
+        -- opacity t' = min (fromIntegral t' / 400.0) 1.0
+        something = 0.5 + (sin t'') / 2.0
+        opacity = something
+        t'' = frint t / fadeVelocity'
+        colour = Vertex4 1.0 0.0 0.0 opacity
+
+        appmatrix = appMatrix app
+        -- model' = multMatrices [ rotateY $ spinVelocity' * frint t ]
+        model' = multMatrices [ rotateY $ 90 * something ]
+        app' = appMultiplyModel model' app
+
+        spinVelocity' = read . head $ args :: Float
+        fadeVelocity' = read . (!! 1) $ args :: Float
+
+    putStrLn $ "opacity: " ++ show opacity
+    circle app' shaderD 50 True 0.5 aspectRatio colour
+    pure ()
+
 drawScene app sceneSeq sceneScale shader buffers flipper t args = do
     let log = appLog app
         prog         = shaderProgram shader
@@ -1922,39 +1959,42 @@ drawScene app sceneSeq sceneScale shader buffers flipper t args = do
 
     pure ()
 
-drawAnnotations app (shaderC, shaderT) glyphTexName t args = do
-    let log = appLog app
-        npoly = 20
-        r = 0.2
-        colour = ver4 1.0 0.0 0.0 0.8
-
---         v1 = ver3 (inv 1) 1 1
---         v2 = ver3 (inv 1) 1 1
---         v3 = ver3 (inv 1) 1 1
---         v4 = ver3 (inv 1) 1 1
-
-        tx00 = Vertex4 0 0 0 1
-        tx01 = Vertex4 0 1 0 1
-        tx10 = Vertex4 1 0 0 1
-        tx11 = Vertex4 1 1 0 1
-        w = 0.2
-        h = 0.2
-
-    -- let t' = t + (read $ (!! 2) args)
-    -- let px = read $ (!! 2) args :: Int
-    -- let ch' = head $ (!! 3) args
-    -- let pad' = read $ (!! 4) args :: Int
-        -- putStrLn $ "t " <> show t
-    -- loadGlyph app glyphTexName ch' px pad'
-
-    -- circle app shaderC npoly True r colour
-    let app' = app & appMultiplyModel model'
-        model' = multMatrices [ scaleX 3.0
-                              , scaleY 3.0
-                              -- , scaleZ 3.0
-                              , translateZ 0 ]
-    -- rectangleTex app shaderT w h glyphTexName (tx00, tx01, tx10, tx11)
-    pure ()
+-- drawAnnotations app (shaderC, shaderT) glyphTexName t args = do
+--     let log = appLog app
+--         npoly = 20
+--         r = 0.2
+--         colour = ver4 1.0 0.0 0.0 0.8
+-- 
+-- --         v1 = ver3 (inv 1) 1 1
+-- --         v2 = ver3 (inv 1) 1 1
+-- --         v3 = ver3 (inv 1) 1 1
+-- --         v4 = ver3 (inv 1) 1 1
+-- 
+--         tx00 = Vertex4 (0.1) 0 0 1
+--         tx01 = Vertex4 (0.1) 1 0 1
+--         tx10 = Vertex4 1 0 0 1
+--         tx11 = Vertex4 1 1 0 1
+--         w = 0.2
+--         h = 0.2
+-- 
+--     -- let t' = t + (read $ (!! 2) args)
+--     -- let px = read $ (!! 2) args :: Int
+--     -- let ch' = head $ (!! 3) args
+--     -- let pad' = read $ (!! 4) args :: Int
+--         -- putStrLn $ "t " <> show t
+--     let ch' = '0'
+--         px = 40
+--         pad' = 0
+--     loadGlyph app glyphTexName ch' px pad'
+-- 
+--     -- circle app shaderC npoly True r colour
+--     let app' = app & appMultiplyModel model'
+--         model' = multMatrices [ scaleX 3.0
+--                               , scaleY 3.0
+--                               -- , scaleZ 3.0
+--                               , translateZ 0 ]
+--     rectangleTex app shaderT w h glyphTexName (tx00, tx01, tx10, tx11)
+--     pure ()
 
 -- duplicate xxx
 drawSceneBurst log shader textureIdxMb buffers burst doPush = do
@@ -2188,16 +2228,19 @@ configYamlInline :: ByteString
 configYamlInline =
     "faceSpec: wolf\n" <>
     "doWolf: true\n" <>
-    "doScene: true\n" <>
-    "wolfFrames: 10\n" <>
+    "doScene: false\n" <>
+    "sceneScale: 0.1\n" <>
+    "wolfFrames: 1\n" <>
     "doInitRotate: true\n" <>
     "doCube: true\n" <>
     "doCarrousel: false\n" <>
     "doStars: false\n" <>
     "doTorus: false\n" <>
     "doBackground: false\n" <>
-    "doTransformTest: false\n"
+    "doTransformTest: false\n" <>
+    "doCircle: false\n"
 
+drawStars :: App -> (Shader, Shader) -> Int -> [String] -> IO ()
 drawStars app (shaderC, shaderT) t args = do
     let star' = drawStar app (shaderC, shaderT) t args
     -- To test single star:
@@ -2275,8 +2318,9 @@ initWolf config log = do
     -- deepseq in combination with our limitFrames'
     -- function works correctly: it only forces the
     -- chunk which results from limitFrames'.
-    debug log "forcing deepseq"
-    spec' <- deepseq wolfSeq'' $ wolfSpec log wolfTextureMap'
+    let wolfSpec' = wolfSpec log wolfTextureMap'
+    debug log $ "forcing deepseq with " ++ show numWolfFrames ++ " elements"
+    spec' <- deepseq wolfSeq'' wolfSpec'
     debug log "done forcing deepseq"
     pure (spec', Just wolfSeq'')
 

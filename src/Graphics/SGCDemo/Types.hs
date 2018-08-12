@@ -119,6 +119,7 @@ module Graphics.SGCDemo.Types
     , configDoTorus
     , configDoBackground
     , configDoTransformTest
+    , configDoCircle
     , configDoStars
     , configWolfFrames
     ) where
@@ -449,10 +450,12 @@ data Config = Config { configFaceSpec :: String
                      , configDoStars :: Bool
                      , configDoTorus :: Bool
                      , configDoBackground :: Bool
-                     , configDoTransformTest :: Bool }
+                     , configDoTransformTest :: Bool
+                     , configDoCircle :: Bool }
 
 data ConfigWolfFrames = ConfigWolfFramesStr String
                       | ConfigWolfFramesNum Int
+                      deriving (Show)
 
 instance FromJSON Config where
     parseJSON (Y.Object v) = Config
@@ -468,4 +471,5 @@ instance FromJSON Config where
         <*> v .: "doTorus"
         <*> v .: "doBackground"
         <*> v .: "doTransformTest"
+        <*> v .: "doCircle"
     parseJSON _ = error "invalid type for parseJSON Config"

@@ -1,19 +1,23 @@
 # faceSpec: eightmovies
 # faceSpec: twocats
-# faceSpec: onemovie
+faceSpec: onemovie
 # faceSpec: vikingplaza
 # faceSpec: eightpics
 # faceSpec: wolf
-faceSpec: wolf
+# faceSpec: wolf
 
-doWolf: false
-doScene: true
+doWolf: true
+doScene: false
 sceneScale: 0.1
-wolfFrames: all
+wolfFrames: 10
+
 doInitRotate: true
 doCube: true
+
 doCarrousel: false
 doStars: false
 doTorus: false
 doBackground: false
 doTransformTest: false
+
+doCircle: false

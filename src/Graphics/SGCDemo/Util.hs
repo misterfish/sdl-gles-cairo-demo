@@ -123,6 +123,8 @@ import           Graphics.Rendering.OpenGL as GL
 
 import           Graphics.SGCDemo.Util2 ( multMatrices )
 import           Graphics.SGCDemo.Types ( Log (Log, info, warn, err)
+                                        , App
+                                        , DMat
                                         , GMat
                                         , GMatD
                                         , appMatrix )
@@ -300,6 +302,7 @@ appUpdateModel  = appUpdateMatrix . updateModel
 appUpdateView   = appUpdateMatrix . updateView
 appUpdateProj   = appUpdateMatrix . updateProj
 
+appMultiplyModel :: DMat -> App -> App
 appMultiplyModel matrix' = appUpdateModel f where
     f = \model -> multMatrices [ matrix', model ]
 appMultiplyView  matrix' = appUpdateView  f where
